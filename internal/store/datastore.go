@@ -34,15 +34,6 @@ type APIKey struct {
 	Key       string    `datastore:"key"`
 }
 
-// datastoreClientWrapper wraps *datastore.Client to implement DatastoreClientAPI.
-type datastoreClientWrapper struct {
-	*datastore.Client
-}
-
-func (w *datastoreClientWrapper) GetAll(ctx context.Context, q *datastore.Query, dst interface{}) ([]*datastore.Key, error) {
-	return w.Client.GetAll(ctx, q, dst)
-}
-
 // NewDatastoreClient creates a new DatastoreClient instance.
 func NewDatastoreClient(ctx context.Context, projectID, namespace string) (*DatastoreClient, error) {
 	client, err := datastore.NewClient(ctx, projectID)
@@ -51,7 +42,7 @@ func NewDatastoreClient(ctx context.Context, projectID, namespace string) (*Data
 	}
 
 	return &DatastoreClient{
-		client:    &datastoreClientWrapper{client},
+		client:    client,
 		namespace: namespace,
 	}, nil
 }
@@ -84,13 +75,4 @@ func (d *DatastoreClient) VerifyAPIKey(ctx context.Context, apiKey string) (stri
 	orgID := keys[0].Parent.Name
 
 	return orgID, nil
-}
-
-// Close closes the DatastoreClient instance.
-// Only works if the underlying client is a real *datastore.Client.
-func (d *DatastoreClient) Close() error {
-	if c, ok := d.client.(*datastoreClientWrapper); ok {
-		return c.Client.Close()
-	}
-	return nil
 }
