@@ -18,7 +18,7 @@ import (
 
 const (
 	jwkPrivKeyPath   = "/secrets/jwk-priv.json"
-	defaultNamespace = "machine-keys"
+	defaultNamespace = "autojoin"
 )
 
 func main() {
