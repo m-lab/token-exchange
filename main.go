@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/datastore"
 	"github.com/m-lab/go/rtx"
 	"github.com/m-lab/token-exchange/internal/auth"
 	"github.com/m-lab/token-exchange/internal/handler"
@@ -49,14 +50,16 @@ func main() {
 		log.Fatal("PROJECT_ID environment variable is required")
 	}
 
-	datastoreClient, err := store.NewDatastoreClient(context.Background(), projectID, defaultNamespace)
+	dsClient, err := datastore.NewClient(context.Background(), projectID)
 	rtx.Must(err, "Failed to initialize Datastore client")
-	defer datastoreClient.Close()
+	defer dsClient.Close()
+
+	dsManager := store.NewDatastoreManager(dsClient, projectID)
 
 	mux := http.NewServeMux()
 
 	// Register handlers with both JWT signer and Datastore client
-	exchangeHandler := handler.NewExchangeHandler(jwtSigner, datastoreClient)
+	exchangeHandler := handler.NewExchangeHandler(jwtSigner, dsManager)
 	jwksHandler := handler.NewJWKSHandler(jwtSigner)
 
 	mux.HandleFunc("/token", exchangeHandler.Exchange)

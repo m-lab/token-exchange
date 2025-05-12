@@ -15,7 +15,7 @@ import (
 
 type mockKeyVerifier struct{}
 
-func (m *mockKeyVerifier) VerifyAPIKey(ctx context.Context, apiKey string) (string, error) {
+func (m *mockKeyVerifier) ValidateKey(ctx context.Context, apiKey string) (string, error) {
 	if apiKey == "valid-key" {
 		return "test-org", nil
 	}
@@ -35,13 +35,13 @@ func (m *mockTokenGenerator) GenerateToken(org string) (string, error) {
 
 func TestExchange(t *testing.T) {
 	tests := []struct {
-		name           string
-		method         string
-		body           interface{}
+		name          string
+		method        string
+		body          interface{}
 		tokenGenFails bool
-		wantStatus     int
-		wantToken      bool
-		wantErrorMsg   string
+		wantStatus    int
+		wantToken     bool
+		wantErrorMsg  string
 	}{
 		{
 			name:   "valid request",
@@ -51,8 +51,8 @@ func TestExchange(t *testing.T) {
 			},
 
 			tokenGenFails: false,
-			wantStatus: http.StatusOK,
-			wantToken:  true,
+			wantStatus:    http.StatusOK,
+			wantToken:     true,
 		},
 		{
 			name:   "invalid method",
@@ -95,8 +95,8 @@ func TestExchange(t *testing.T) {
 				APIKey: "valid-key",
 			},
 			tokenGenFails: true,
-			wantStatus:   http.StatusInternalServerError,
-			wantErrorMsg: "Failed to generate token\n",
+			wantStatus:    http.StatusInternalServerError,
+			wantErrorMsg:  "Failed to generate token\n",
 		},
 	}
 

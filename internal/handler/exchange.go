@@ -11,7 +11,7 @@ type TokenGenerator interface {
 }
 
 type KeyVerifier interface {
-	VerifyAPIKey(ctx context.Context, apiKey string) (string, error)
+	ValidateKey(ctx context.Context, apiKey string) (string, error)
 }
 
 type ExchangeHandler struct {
@@ -48,7 +48,7 @@ func (h *ExchangeHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify API key and get organization ID
-	orgID, err := h.store.VerifyAPIKey(r.Context(), req.APIKey)
+	orgID, err := h.store.ValidateKey(r.Context(), req.APIKey)
 	if err != nil {
 		http.Error(w, "Invalid API key", http.StatusUnauthorized)
 		return
