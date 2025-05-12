@@ -13,8 +13,12 @@ const (
 	APIKeyKind = "APIKey"
 )
 
+type DatastoreClientAPI interface {
+	GetAll(ctx context.Context, q *datastore.Query, dst interface{}) ([]*datastore.Key, error)
+}
+
 type DatastoreClient struct {
-	client    *datastore.Client
+	client    DatastoreClientAPI
 	namespace string
 }
 
@@ -30,6 +34,15 @@ type APIKey struct {
 	Key       string    `datastore:"key"`
 }
 
+// datastoreClientWrapper wraps *datastore.Client to implement DatastoreClientAPI.
+type datastoreClientWrapper struct {
+	*datastore.Client
+}
+
+func (w *datastoreClientWrapper) GetAll(ctx context.Context, q *datastore.Query, dst interface{}) ([]*datastore.Key, error) {
+	return w.Client.GetAll(ctx, q, dst)
+}
+
 // NewDatastoreClient creates a new DatastoreClient instance.
 func NewDatastoreClient(ctx context.Context, projectID, namespace string) (*DatastoreClient, error) {
 	client, err := datastore.NewClient(ctx, projectID)
@@ -38,9 +51,17 @@ func NewDatastoreClient(ctx context.Context, projectID, namespace string) (*Data
 	}
 
 	return &DatastoreClient{
-		client:    client,
+		client:    &datastoreClientWrapper{client},
 		namespace: namespace,
 	}, nil
+}
+
+// NewDatastoreClientWithAPI allows injecting a custom DatastoreClientAPI (for testing).
+func NewDatastoreClientWithAPI(api DatastoreClientAPI, namespace string) *DatastoreClient {
+	return &DatastoreClient{
+		client:    api,
+		namespace: namespace,
+	}
 }
 
 // VerifyAPIKey verifies the given API key and returns the organization ID.
@@ -66,6 +87,10 @@ func (d *DatastoreClient) VerifyAPIKey(ctx context.Context, apiKey string) (stri
 }
 
 // Close closes the DatastoreClient instance.
+// Only works if the underlying client is a real *datastore.Client.
 func (d *DatastoreClient) Close() error {
-	return d.client.Close()
+	if c, ok := d.client.(*datastoreClientWrapper); ok {
+		return c.Client.Close()
+	}
+	return nil
 }
