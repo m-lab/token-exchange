@@ -47,9 +47,9 @@ func NewJWTSigner(keyPath string) (*JWTSigner, error) {
 
 	// Create the signer using the private key
 	signerOpts := (&jose.SignerOptions{}).WithHeader(jose.HeaderKey("kid"), privateJWK.KeyID)
-
+	alg := jose.SignatureAlgorithm(privateJWK.Algorithm)
 	signer, err := jose.NewSigner(jose.SigningKey{
-		Algorithm: jose.EdDSA,
+		Algorithm: alg,
 		Key:       privateJWK.Key,
 	}, signerOpts)
 	if err != nil {
