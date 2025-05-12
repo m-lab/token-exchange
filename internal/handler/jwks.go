@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-jose/go-jose/v4"
-	"github.com/robertodauria/token-exchange/internal/auth"
+	"github.com/m-lab/token-exchange/internal/auth"
 )
 
 type JWKSHandler struct {

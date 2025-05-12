@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/m-lab/go/rtx"
-	"github.com/robertodauria/token-exchange/internal/auth"
-	"github.com/robertodauria/token-exchange/internal/handler"
-	"github.com/robertodauria/token-exchange/internal/store"
+	"github.com/m-lab/token-exchange/internal/auth"
+	"github.com/m-lab/token-exchange/internal/handler"
+	"github.com/m-lab/token-exchange/internal/store"
 )
 
 const (

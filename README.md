@@ -1,7 +1,7 @@
 # Token Exchange Service
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/robertodauria/token-exchange)](https://goreportcard.com/report/github.com/robertodauria/token-exchange)
-[![Coverage Status](https://coveralls.io/repos/github/robertodauria/token-exchange/badge.svg?branch=main)](https://coveralls.io/github/robertodauria/token-exchange?branch=main)
+[![Go Report Card](https://goreportcard.com/badge/github.com/m-lab/token-exchange)](https://goreportcard.com/report/github.com/m-lab/token-exchange)
+[![Coverage Status](https://coveralls.io/repos/github/m-lab/token-exchange/badge.svg?branch=main)](https://coveralls.io/github/m-lab/token-exchange?branch=main)
 
 A Cloud Run service that exchanges API keys for signed JWTs to be used with M-Lab services.
 
@@ -14,12 +14,14 @@ A Cloud Run service that exchanges API keys for signed JWTs to be used with M-La
 ## Setup
 
 1. Clone the repository:
+
 ```bash
 git clone [repository-url]
 cd token-exchange
 ```
 
 2. Set up the signing key:
+
 ```bash
 # Generate a new signing key (if you don't have one)
 jose-util generate-key --use sig --alg EdDSA > private.json
@@ -50,6 +52,7 @@ The service can be built and deployed using the provided scripts:
 Exchanges an API key for a signed JWT.
 
 #### Request
+
 ```http
 POST /token
 Content-Type: application/json
@@ -58,14 +61,17 @@ Content-Type: application/json
     "api_key": "your-api-key"
 }
 ```
+
 #### Response
+
 ```json
 {
-    "token": "signed-jwt-token"
+  "token": "signed-jwt-token"
 }
 ```
 
 #### Example
+
 ```bash
 curl -X POST https://[service-url]/token \
   -H "Content-Type: application/json" \
@@ -77,23 +83,25 @@ curl -X POST https://[service-url]/token \
 Returns the JSON Web Key Set (JWKS) containing the public key used to verify the JWTs.
 
 #### Request
+
 ```http
 GET /.well-known/jwks.json
 ```
 
 #### Response
+
 ```json
 {
-    "keys": [
-        {
-            "kty": "RSA",
-            "kid": "...",
-            "n": "...",
-            "e": "...",
-            "alg": "...",
-            "use": "sig"
-        }
-    ]
+  "keys": [
+    {
+      "kty": "RSA",
+      "kid": "...",
+      "n": "...",
+      "e": "...",
+      "alg": "...",
+      "use": "sig"
+    }
+  ]
 }
 ```
 
@@ -102,7 +110,6 @@ GET /.well-known/jwks.json
 ```bash
 curl https://[service-url]/.well-known/jwks.json
 ```
-
 
 ## Development
 

@@ -1,6 +1,6 @@
-module github.com/robertodauria/token-exchange
+module github.com/m-lab/token-exchange
 
-go 1.22.2
+go 1.24
 
 require (
 	cloud.google.com/go/datastore v1.20.0
