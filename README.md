@@ -16,7 +16,7 @@ A Cloud Run service that exchanges API keys for signed JWTs to be used with M-La
 1. Clone the repository:
 
 ```bash
-git clone [repository-url]
+git clone https://github.com/m-lab/token-exchange.git
 cd token-exchange
 ```
 
