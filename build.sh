@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PROJECT_ID=${1:-mlab-sandbox}
-REGION=${2:-us-central1}
+REGION=${2:-us-east1}
 
 echo "Building for:"
 echo "Project ID: $PROJECT_ID"

@@ -1,6 +1,6 @@
 substitutions:
   # Default values, can be overridden when submitting the build
-  _REGION: us-central1
+  _REGION: us-east1
   _SERVICE_NAME: token-exchange
   _SECRET_NAME: token-exchange-private-key
 steps:
@@ -11,7 +11,7 @@ steps:
       [
         "build",
         "-t",
-        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:$SHORT_SHA",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:$BUILD_ID",
         "-t",
         "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:latest",
         ".",
@@ -21,7 +21,10 @@ steps:
   - name: "gcr.io/cloud-builders/docker"
     id: Push
     args:
-      ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}"]
+      [
+        "push",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:${BUILD_ID}",
+      ]
     waitFor: ["Build"] # Ensure build is finished before pushing
 
   # 3. Deploy to Cloud Run
@@ -34,7 +37,7 @@ steps:
         "deploy",
         "${_SERVICE_NAME}",
         "--image",
-        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:$SHORT_SHA",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:$BUILD_ID",
         "--platform",
         "managed",
         "--region",
@@ -49,5 +52,5 @@ steps:
     waitFor: ["Push"]
 
 images:
-  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:$SHORT_SHA"
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:$BUILD_ID"
   - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:latest"

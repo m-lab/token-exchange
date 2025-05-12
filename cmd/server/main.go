@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	jwkPrivKeyPath = "/secrets/jwk-priv.json"
+	jwkPrivKeyPath   = "/secrets/jwk-priv.json"
+	defaultNamespace = "machine-keys"
 )
 
 func main() {
@@ -48,9 +49,7 @@ func main() {
 		log.Fatal("PROJECT_ID environment variable is required")
 	}
 
-	namespace := "credentials"
-
-	datastoreClient, err := store.NewDatastoreClient(context.Background(), projectID, namespace)
+	datastoreClient, err := store.NewDatastoreClient(context.Background(), projectID, defaultNamespace)
 	rtx.Must(err, "Failed to initialize Datastore client")
 	defer datastoreClient.Close()
 
