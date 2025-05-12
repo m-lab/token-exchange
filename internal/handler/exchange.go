@@ -1,16 +1,22 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
-
-	"github.com/m-lab/token-exchange/internal/auth"
-	"github.com/m-lab/token-exchange/internal/store"
 )
 
+type TokenGenerator interface {
+	GenerateToken(org string) (string, error)
+}
+
+type KeyVerifier interface {
+	VerifyAPIKey(ctx context.Context, apiKey string) (string, error)
+}
+
 type ExchangeHandler struct {
-	jwtSigner *auth.JWTSigner
-	store     *store.DatastoreClient
+	jwtSigner TokenGenerator
+	store     KeyVerifier
 }
 
 type TokenRequest struct {
@@ -22,7 +28,7 @@ type TokenResponse struct {
 	Error string `json:"error,omitempty"`
 }
 
-func NewExchangeHandler(jwtSigner *auth.JWTSigner, store *store.DatastoreClient) *ExchangeHandler {
+func NewExchangeHandler(jwtSigner TokenGenerator, store KeyVerifier) *ExchangeHandler {
 	return &ExchangeHandler{
 		jwtSigner: jwtSigner,
 		store:     store,

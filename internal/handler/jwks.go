@@ -6,14 +6,17 @@ import (
 	"net/http"
 
 	"github.com/go-jose/go-jose/v4"
-	"github.com/m-lab/token-exchange/internal/auth"
 )
 
-type JWKSHandler struct {
-	jwtSigner *auth.JWTSigner
+type PublicKeyProvider interface {
+	GetPublicJWK() jose.JSONWebKey
 }
 
-func NewJWKSHandler(jwtSigner *auth.JWTSigner) *JWKSHandler {
+type JWKSHandler struct {
+	jwtSigner PublicKeyProvider
+}
+
+func NewJWKSHandler(jwtSigner PublicKeyProvider) *JWKSHandler {
 	return &JWKSHandler{
 		jwtSigner: jwtSigner,
 	}
