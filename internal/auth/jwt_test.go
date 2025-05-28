@@ -20,14 +20,14 @@ func TestNewJWTSigner(t *testing.T) {
 	t.Run("valid testdata key", func(t *testing.T) {
 		keyPath := filepath.Join(testdataDir, "private-key.json")
 		signer, err := NewJWTSigner(keyPath)
-		
+
 		assert.NoError(t, err)
 		assert.NotNil(t, signer)
 		assert.NotNil(t, signer.signer)
 		assert.NotNil(t, signer.publicJWK)
 		assert.True(t, signer.publicJWK.IsPublic())
 	})
-	
+
 	// Create a temporary directory for dynamic test files
 	tmpDir, err := os.MkdirTemp("", "jwt-test")
 	require.NoError(t, err)
@@ -134,7 +134,7 @@ func TestGenerateToken(t *testing.T) {
 	// Test GenerateToken
 	t.Run("valid token generation", func(t *testing.T) {
 		orgID := "test-org-123"
-		
+
 		// Generate token
 		tokenString, err := signer.GenerateToken(orgID)
 		assert.NoError(t, err)
@@ -160,16 +160,16 @@ func TestGenerateToken(t *testing.T) {
 		assert.NotNil(t, claims.IssuedAt)
 		assert.NotNil(t, claims.Expiry)
 		assert.NotNil(t, claims.NotBefore)
-		
+
 		// IssuedAt should be close to now
 		issuedAt := claims.IssuedAt.Time()
 		assert.WithinDuration(t, now, issuedAt, 5*time.Second)
-		
+
 		// Expiry should be about an hour in the future
 		expiry := claims.Expiry.Time()
 		expectedExpiry := issuedAt.Add(time.Hour)
 		assert.WithinDuration(t, expectedExpiry, expiry, 5*time.Second)
-		
+
 		// NotBefore should be equal to IssuedAt
 		assert.Equal(t, issuedAt.Unix(), claims.NotBefore.Time().Unix())
 	})
@@ -184,12 +184,12 @@ func TestGenerateToken(t *testing.T) {
 		supportedAlgs := []jose.SignatureAlgorithm{jose.EdDSA}
 		parsedToken, err := jwt.ParseSigned(token, supportedAlgs)
 		assert.NoError(t, err)
-		
+
 		var claims Claims
 		publicKey := signer.GetPublicJWK()
 		err = parsedToken.Claims(publicKey.Key, &claims) // Also verifies signature
 		assert.NoError(t, err)
-		
+
 		// Verify empty org claim
 		assert.Equal(t, "", claims.Organization)
 	})
@@ -206,15 +206,15 @@ func TestGetPublicJWK(t *testing.T) {
 
 	// Test GetPublicJWK
 	publicJWK := signer.GetPublicJWK()
-	
+
 	// Check that it's a public key
 	assert.True(t, publicJWK.IsPublic())
-	
+
 	// Check key properties
 	assert.Equal(t, "Kd-Wp0rnXg8rxIRO1ChTbcdd0wtB8jv5_H7RoTOJvLU=", publicJWK.KeyID)
 	assert.Equal(t, "sig", publicJWK.Use)
 	assert.Equal(t, "EdDSA", publicJWK.Algorithm)
-	
+
 	// Ensure the private key part is not present
 	jsonData, err := publicJWK.MarshalJSON()
 	require.NoError(t, err)
