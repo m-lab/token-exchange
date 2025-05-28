@@ -86,7 +86,7 @@ func (s *JWTSigner) GenerateToken(org string) (string, error) {
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			Expiry:    jwt.NewNumericDate(expiry),
-			Audience:  jwt.Audience{"autojoin"},
+			Audience:  DefaultAudience,
 		},
 	}
 
