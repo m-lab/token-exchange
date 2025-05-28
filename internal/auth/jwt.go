@@ -11,11 +11,20 @@ import (
 	"github.com/google/uuid"
 )
 
+const Issuer = "token-exchange"
+
+// DefaultAudience is the default audience for JWT tokens.
+// TODO(rd): Support audience selection (via different URLs or query string)
+var DefaultAudience = jwt.Audience{"autojoin"}
+
+// JWTSigner is a JWT signer that can be used to sign JWT tokens.
 type JWTSigner struct {
 	signer    jose.Signer
 	publicJWK jose.JSONWebKey
 }
 
+// Claims is a JWT claims set that extends jwt.Claims with an additional field
+// for the Organization.
 type Claims struct {
 	jwt.Claims
 	Organization string `json:"org"`
@@ -73,7 +82,7 @@ func (s *JWTSigner) GenerateToken(org string) (string, error) {
 		Organization: org,
 		Claims: jwt.Claims{
 			ID:        uuid.New().String(),
-			Issuer:    "token-exchange",
+			Issuer:    Issuer,
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			Expiry:    jwt.NewNumericDate(expiry),

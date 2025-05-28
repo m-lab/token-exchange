@@ -1,9 +1,26 @@
 substitutions:
   # Default values, can be overridden when submitting the build
   _REGION: us-east1
-  _SERVICE_NAME: token-exchange
-  _SECRET_NAME: token-exchange-private-key
+  _SERVICE_NAME: auth
+  _SECRET_NAME: auth-private-key
+  _DOMAIN: auth.${PROJECT_ID}.measurementlab.net
 steps:
+  # 0. Ensure JWT signing secret exists
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: EnsureSecret
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        # Install Go and jose-util
+        apt-get update && apt-get install -y golang-go
+        export PATH=$PATH:/root/go/bin
+        go install github.com/go-jose/go-jose/jose-util/v4@latest
+        
+        # Run the secret generation script
+        chmod +x scripts/ensure-jwt-secret.sh
+        ./scripts/ensure-jwt-secret.sh
+
   # 1. Build the container image
   - name: "gcr.io/cloud-builders/docker"
     id: Build
@@ -49,7 +66,23 @@ steps:
         "--cpu=1",
         "--project=${PROJECT_ID}",
       ]
-    waitFor: ["Push"]
+    waitFor: ["Push", "EnsureSecret"]
+
+  # 4. Create or verify domain mapping
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: DomainMapping
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "domain-mappings"
+      - "create"
+      - "--service=${_SERVICE_NAME}"
+      - "--domain=${_DOMAIN}"
+      - "--region=${_REGION}"
+      - "--project=${PROJECT_ID}"
+      - "--quiet"
+    allowFailure: true  # Don't fail if mapping already exists
+    waitFor: ["Deploy"]
 
 images:
   - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:$BUILD_ID"
