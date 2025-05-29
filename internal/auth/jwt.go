@@ -74,6 +74,7 @@ func NewJWTSigner(keyPath string) (*JWTSigner, error) {
 	}, nil
 }
 
+// GenerateToken generates a JWT token for the given organization.
 func (s *JWTSigner) GenerateToken(org string) (string, error) {
 	now := time.Now()
 	expiry := now.Add(time.Hour) // Token expiry: 1 hour
