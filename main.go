@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -78,19 +77,18 @@ func main() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		<-sigChan
-		log.Printf("Received shutdown signal, gracefully shutting down...")
+		slog.Warn("Received shutdown signal, gracefully shutting down...")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		if err := server.Shutdown(ctx); err != nil {
-			log.Printf("HTTP server shutdown error: %v", err)
+			slog.Error("Shutdown() error", "err", err)
 		}
 	}()
 
-	log.Printf("Server starting on port %s", port)
 	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("HTTP server error: %v", err)
+		slog.Error("ListenAndServe() error", "err", err)
 	}
-	log.Printf("Server stopped")
+	slog.Info("Server stopped")
 }
