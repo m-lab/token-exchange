@@ -5,15 +5,15 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /server
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /token-exchange-server
 
 FROM gcr.io/distroless/static-debian12
 
 # Copy the built static binary from the builder stage
-COPY --from=builder /server /server
+COPY --from=builder /token-exchange-server /token-exchange-server
 
 # Expose port (metadata)
 EXPOSE 8080
 
 # Command to run
-CMD ["/server"]
+ENTRYPOINT ["/token-exchange-server"]
