@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -11,6 +14,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/datastore"
+	"github.com/m-lab/go/flagx"
 	"github.com/m-lab/go/rtx"
 	"github.com/m-lab/token-exchange/internal/auth"
 	"github.com/m-lab/token-exchange/internal/handler"
@@ -22,40 +26,33 @@ const (
 	defaultNamespace = "autojoin"
 )
 
+var (
+	flagPort      = flag.Int("port", 8080, "Port to listen on")
+	flagKeyPath   = flag.String("private-key-path", jwkPrivKeyPath, "Path to private key")
+	flagNamespace = flag.String("namespace", defaultNamespace, "Datastore namespace")
+	flagProjectID = flag.String("project-id", "mlab-sandbox", "Google Cloud project ID")
+)
+
 func main() {
-	log.Printf("Starting token exchange service...")
+	flag.Parse()
+	rtx.Must(flagx.ArgsFromEnv(flag.CommandLine), "Could not parse env args")
 
 	// On Cloud Run, the port is injected via the environment variable PORT.
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	log.Printf("Port set to: %s", port)
+	slog.Info("Starting token exchange server...")
 
-	// Initialize JWT signer
-	keyPath := os.Getenv("PRIVATE_KEY_PATH")
-	if keyPath == "" {
-		keyPath = jwkPrivKeyPath
-	}
-	log.Printf("Using private key from: %s", keyPath)
-
-	jwtSigner, err := auth.NewJWTSigner(keyPath)
-	if err != nil {
-		log.Fatalf("Failed to initialize JWT signer: %v", err)
-	}
-	log.Printf("JWT signer initialized successfully")
+	jwtSigner := rtx.ValueOrDie(auth.NewJWTSigner(*flagKeyPath))
+	slog.Info("JWT signer initialized successfully")
 
 	// Initialize Datastore client
-	projectID := os.Getenv("PROJECT_ID")
-	if projectID == "" {
-		log.Fatal("PROJECT_ID environment variable is required")
-	}
-
-	dsClient, err := datastore.NewClient(context.Background(), projectID)
+	dsClient, err := datastore.NewClient(context.Background(), *flagProjectID)
 	rtx.Must(err, "Failed to initialize Datastore client")
 	defer dsClient.Close()
 
-	dsManager := store.NewDatastoreManager(dsClient, projectID)
+	dsManager := store.NewDatastoreManager(dsClient, *flagProjectID)
 
 	mux := http.NewServeMux()
 
@@ -92,7 +89,7 @@ func main() {
 	}()
 
 	log.Printf("Server starting on port %s", port)
-	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("HTTP server error: %v", err)
 	}
 	log.Printf("Server stopped")
