@@ -91,7 +91,7 @@ main() {
 # Verify dependencies
 if ! command -v jose-util &> /dev/null; then
     echo "Error: jose-util is required but not installed"
-    echo "Install with: go install github.com/go-jose/go-jose/jose-util/v4@latest"
+    echo "Install with: go install github.com/go-jose/go-jose/v4/jose-util@latest"
     exit 1
 fi
 

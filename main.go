@@ -63,7 +63,7 @@ func main() {
 	exchangeHandler := handler.NewExchangeHandler(jwtSigner, dsManager)
 	jwksHandler := handler.NewJWKSHandler(jwtSigner)
 
-	mux.HandleFunc("POST /token", exchangeHandler.Exchange)
+	mux.HandleFunc("POST /v0/token", exchangeHandler.Exchange)
 	mux.HandleFunc("GET /.well-known/jwks.json", jwksHandler.ServeJWKS)
 
 	// Health check endpoint
