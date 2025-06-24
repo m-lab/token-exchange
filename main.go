@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -14,6 +13,7 @@ import (
 
 	"cloud.google.com/go/datastore"
 	"github.com/m-lab/go/flagx"
+	"github.com/m-lab/go/httpx"
 	"github.com/m-lab/go/rtx"
 	"github.com/m-lab/token-exchange/internal/auth"
 	"github.com/m-lab/token-exchange/internal/handler"
@@ -67,23 +67,18 @@ func main() {
 		Handler: mux,
 	}
 
-	// Graceful shutdown
-	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		<-sigChan
-		slog.Warn("Received shutdown signal, gracefully shutting down...")
+	rtx.Must(httpx.ListenAndServeAsync(server), "Failed to start server")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+	// Wait for shutdown signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+	slog.Warn("Received shutdown signal, gracefully shutting down...")
 
-		if err := server.Shutdown(ctx); err != nil {
-			slog.Error("Shutdown() error", "err", err)
-		}
-	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		slog.Error("ListenAndServe() error", "err", err)
+	if err := server.Shutdown(ctx); err != nil {
+		slog.Error("Shutdown() error", "err", err)
 	}
-	slog.Info("Server stopped")
 }
