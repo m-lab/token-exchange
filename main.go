@@ -36,11 +36,6 @@ func main() {
 	flag.Parse()
 	rtx.Must(flagx.ArgsFromEnv(flag.CommandLine), "Could not parse env args")
 
-	// On Cloud Run, the port is injected via the environment variable PORT.
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
 	slog.Info("Starting token exchange server...")
 
 	jwtSigner := rtx.ValueOrDie(auth.NewJWTSigner(*flagKeyPath))
@@ -51,7 +46,7 @@ func main() {
 	rtx.Must(err, "Failed to initialize Datastore client")
 	defer dsClient.Close()
 
-	dsManager := store.NewDatastoreManager(dsClient, *flagProjectID)
+	dsManager := store.NewDatastoreManager(dsClient, *flagProjectID, *flagNamespace)
 
 	mux := http.NewServeMux()
 
@@ -68,7 +63,7 @@ func main() {
 	})
 
 	server := &http.Server{
-		Addr:    ":" + port,
+		Addr:    fmt.Sprintf(":%d", *flagPort),
 		Handler: mux,
 	}
 
