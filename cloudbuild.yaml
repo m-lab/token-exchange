@@ -50,7 +50,7 @@ steps:
         "--cpu=1",
         "--project=${PROJECT_ID}",
       ]
-    waitFor: ["Push", "EnsureSecret"]
+    waitFor: ["Push"]
 
   # 4. Create or verify domain mapping
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
