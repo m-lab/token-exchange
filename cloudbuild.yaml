@@ -14,9 +14,9 @@ steps:
       - |
         # Install Go and jose-util
         apt-get update && apt-get install -y golang-go
-        export PATH=$PATH:/root/go/bin
+        export PATH="$PATH:/root/go/bin"
         go install github.com/go-jose/go-jose/jose-util/v4@latest
-        
+
         # Run the secret generation script
         chmod +x scripts/ensure-jwt-secret.sh
         ./scripts/ensure-jwt-secret.sh
@@ -81,7 +81,7 @@ steps:
       - "--region=${_REGION}"
       - "--project=${PROJECT_ID}"
       - "--quiet"
-    allowFailure: true  # Don't fail if mapping already exists
+    allowFailure: true # Don't fail if mapping already exists
     waitFor: ["Deploy"]
 
 images:
