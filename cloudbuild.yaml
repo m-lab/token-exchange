@@ -57,6 +57,7 @@ steps:
     id: DomainMapping
     entrypoint: gcloud
     args:
+      - "beta"
       - "run"
       - "domain-mappings"
       - "create"
