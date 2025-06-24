@@ -26,10 +26,10 @@ const (
 )
 
 var (
-	flagPort      = flag.Int("port", 8080, "Port to listen on")
-	flagKeyPath   = flag.String("private-key-path", jwkPrivKeyPath, "Path to private key")
-	flagNamespace = flag.String("namespace", defaultNamespace, "Datastore namespace")
-	flagProjectID = flag.String("project-id", "mlab-sandbox", "Google Cloud project ID")
+	port      = flag.Int("port", 8080, "Port to listen on")
+	keyPath   = flag.String("private-key-path", jwkPrivKeyPath, "Path to private key")
+	namespace = flag.String("namespace", defaultNamespace, "Datastore namespace")
+	projectID = flag.String("project-id", "mlab-sandbox", "Google Cloud project ID")
 )
 
 func main() {
@@ -38,15 +38,15 @@ func main() {
 
 	slog.Info("Starting token exchange server...")
 
-	jwtSigner := rtx.ValueOrDie(auth.NewJWTSigner(*flagKeyPath))
+	jwtSigner := rtx.ValueOrDie(auth.NewJWTSigner(*keyPath))
 	slog.Info("JWT signer initialized successfully")
 
 	// Initialize Datastore client
-	dsClient, err := datastore.NewClient(context.Background(), *flagProjectID)
+	dsClient, err := datastore.NewClient(context.Background(), *projectID)
 	rtx.Must(err, "Failed to initialize Datastore client")
 	defer dsClient.Close()
 
-	dsManager := store.NewDatastoreManager(dsClient, *flagProjectID, *flagNamespace)
+	dsManager := store.NewDatastoreManager(dsClient, *projectID, *namespace)
 
 	mux := http.NewServeMux()
 
@@ -63,7 +63,7 @@ func main() {
 	})
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", *flagPort),
+		Addr:    fmt.Sprintf(":%d", *port),
 		Handler: mux,
 	}
 
