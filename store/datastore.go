@@ -10,7 +10,6 @@ import (
 	"cloud.google.com/go/datastore"
 )
 
-const autojoinNamespace = "autojoin"
 const OrgKind = "Organization"
 const APIKeyKind = "APIKey"
 
@@ -48,11 +47,11 @@ type DatastoreOrgManager struct {
 }
 
 // NewDatastoreManager creates a new DatastoreOrgManager instance.
-func NewDatastoreManager(client DatastoreClient, project string) *DatastoreOrgManager {
+func NewDatastoreManager(client DatastoreClient, project, ns string) *DatastoreOrgManager {
 	return &DatastoreOrgManager{
 		client:    client,
 		project:   project,
-		namespace: autojoinNamespace,
+		namespace: ns,
 	}
 }
 
