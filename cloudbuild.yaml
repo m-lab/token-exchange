@@ -5,22 +5,6 @@ substitutions:
   _SECRET_NAME: auth-private-key
   _DOMAIN: auth.${PROJECT_ID}.measurementlab.net
 steps:
-  # 0. Ensure JWT signing secret exists
-  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
-    id: EnsureSecret
-    entrypoint: bash
-    args:
-      - "-c"
-      - |
-        # Install Go and jose-util
-        apt-get update && apt-get install -y -t bookworm-backports golang-1.21-go
-        export PATH=$$PATH:/root/go/bin
-        go install github.com/go-jose/go-jose/v4/jose-util@latest
-
-        # Run the secret generation script
-        chmod +x scripts/ensure-jwt-secret.sh
-        ./scripts/ensure-jwt-secret.sh
-
   # 1. Build the container image
   - name: "gcr.io/cloud-builders/docker"
     id: Build
