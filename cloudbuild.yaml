@@ -14,7 +14,7 @@ steps:
       - |
         # Install Go and jose-util
         apt-get update && apt-get install -y golang-go
-        export PATH="$PATH:/root/go/bin"
+        export PATH=$$PATH:/root/go/bin
         go install github.com/go-jose/go-jose/jose-util/v4@latest
 
         # Run the secret generation script
