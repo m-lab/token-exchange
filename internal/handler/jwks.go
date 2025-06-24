@@ -2,7 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-jose/go-jose/v4"
@@ -43,7 +43,7 @@ func (h *JWKSHandler) ServeJWKS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	if err := json.NewEncoder(w).Encode(jwks); err != nil {
-		log.Printf("Error encoding JWKS response: %v", err)
+		slog.Error("Error encoding JWKS response", "err", err)
 		http.Error(w, "Failed to encode JWKS response", http.StatusInternalServerError)
 		return
 	}
