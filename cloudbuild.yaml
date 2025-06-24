@@ -13,7 +13,7 @@ steps:
       - "-c"
       - |
         # Install Go and jose-util
-        apt-get update && apt-get install -y golang-go
+        apt-get update && apt-get install -y -t bookworm-backports golang-1.21-go
         export PATH=$$PATH:/root/go/bin
         go install github.com/go-jose/go-jose/v4/jose-util@latest
 
