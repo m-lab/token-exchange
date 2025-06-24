@@ -52,23 +52,6 @@ steps:
       ]
     waitFor: ["Push"]
 
-  # 4. Create or verify domain mapping
-  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
-    id: DomainMapping
-    entrypoint: gcloud
-    args:
-      - "beta"
-      - "run"
-      - "domain-mappings"
-      - "create"
-      - "--service=${_SERVICE_NAME}"
-      - "--domain=${_DOMAIN}"
-      - "--region=${_REGION}"
-      - "--project=${PROJECT_ID}"
-      - "--quiet"
-    allowFailure: true # Don't fail if mapping already exists
-    waitFor: ["Deploy"]
-
 images:
   - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:$BUILD_ID"
   - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:latest"
