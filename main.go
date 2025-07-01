@@ -21,15 +21,15 @@ import (
 )
 
 const (
-	jwkPrivKeyPath   = "/secrets/jwk-priv.json"
-	defaultNamespace = "platform-credentials"
-	defaultProjectID = "mlab-sandbox"
+	jwkPrivKeyPath    = "/secrets/jwk-priv.json"
+	defaultPlatformNS = "platform-credentials"
+	defaultProjectID  = "mlab-sandbox"
 )
 
 var (
 	port      = flag.Int("port", 8080, "Port to listen on")
 	keyPath   = flag.String("private-key-path", jwkPrivKeyPath, "Path to private key")
-	namespace = flag.String("credentials-ns", defaultNamespace,
+	namespace = flag.String("platform-ns", defaultPlatformNS,
 		"Datastore namespace for platform credentials")
 	projectID = flag.String("project-id", defaultProjectID, "Google Cloud project ID")
 )
