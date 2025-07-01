@@ -1,0 +1,21 @@
+name: test
+on:
+  pull_request:
+  push:
+    branches:
+      - "main"
+jobs:
+  build_and_run_tests:
+    runs-on: "${{ matrix.os }}"
+    strategy:
+      matrix:
+        go: ["1.24.4"]
+        os: ["ubuntu-24.04"]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: "${{ matrix.go }}"
+          cache: true
+      - run: go build -v ./...
+      - run: go test -race -v ./...
