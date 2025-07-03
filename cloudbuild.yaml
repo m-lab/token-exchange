@@ -4,6 +4,7 @@ substitutions:
   _SERVICE_NAME: auth
   _SECRET_NAME: auth-private-key
   _DOMAIN: auth.${PROJECT_ID}.measurementlab.net
+  _PLATFORM_NS: platform-credentials
 steps:
   # 1. Build the container image
   - name: "gcr.io/cloud-builders/docker"
@@ -45,7 +46,7 @@ steps:
         "${_REGION}",
         "--allow-unauthenticated",
         "--set-secrets=/secrets/jwk-priv.json=${_SECRET_NAME}:latest",
-        "--set-env-vars=PROJECT_ID=${PROJECT_ID}",
+        "--set-env-vars=PROJECT_ID=${PROJECT_ID},PLATFORM_NS=${_PLATFORM_NS}",
         "--memory=256Mi",
         "--cpu=1",
         "--project=${PROJECT_ID}",
