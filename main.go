@@ -47,14 +47,17 @@ func main() {
 	defer dsClient.Close()
 
 	dsManager := store.NewDatastoreManager(dsClient, *projectID, *namespace)
+	integrationManager := store.NewIntegrationManager(dsClient, *projectID, *namespace)
 
 	mux := http.NewServeMux()
 
 	// Register handlers
 	exchangeHandler := handler.NewExchangeHandler(jwtSigner, dsManager)
+	integrationExchangeHandler := handler.NewIntegrationExchangeHandler(jwtSigner, integrationManager)
 	jwksHandler := handler.NewJWKSHandler(jwtSigner)
 
 	mux.HandleFunc("POST /v0/token/autojoin", exchangeHandler.Exchange)
+	mux.HandleFunc("POST /v0/token/integration", integrationExchangeHandler.Exchange)
 	mux.HandleFunc("GET /.well-known/jwks.json", jwksHandler.ServeJWKS)
 
 	// Health check endpoint

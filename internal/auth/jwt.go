@@ -23,11 +23,13 @@ type JWTSigner struct {
 	publicJWK jose.JSONWebKey
 }
 
-// Claims is a JWT claims set that extends jwt.Claims with an additional field
-// for the Organization.
+// Claims is a JWT claims set that extends jwt.Claims with additional fields
+// for the Organization (autojoin) or Integration credentials.
 type Claims struct {
 	jwt.Claims
-	Organization string `json:"org"`
+	Organization string `json:"org,omitempty"`
+	IntID        string `json:"int_id,omitempty"`
+	KeyID        string `json:"key_id,omitempty"`
 }
 
 // NewJWTSigner loads a private key from a JWK file and prepares a signer.
@@ -84,6 +86,32 @@ func (s *JWTSigner) GenerateToken(org string) (string, error) {
 		Claims: jwt.Claims{
 			ID:        uuid.New().String(),
 			Issuer:    Issuer,
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			Expiry:    jwt.NewNumericDate(expiry),
+			Audience:  DefaultAudience,
+		},
+	}
+
+	signedToken, err := jwt.Signed(s.signer).Claims(claims).Serialize()
+	if err != nil {
+		return "", fmt.Errorf("failed to sign claims: %w", err)
+	}
+
+	return signedToken, nil
+}
+
+// GenerateIntegrationToken generates a JWT token for the given integrator and key ID.
+func (s *JWTSigner) GenerateIntegrationToken(intID, keyID string) (string, error) {
+	now := time.Now()
+	expiry := now.Add(10 * time.Second) // Short-lived token for integrations
+
+	claims := Claims{
+		IntID: intID,
+		KeyID: keyID,
+		Claims: jwt.Claims{
+			ID:        uuid.New().String(),
+			Issuer:    "locate", // Different issuer for integration tokens
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			Expiry:    jwt.NewNumericDate(expiry),
