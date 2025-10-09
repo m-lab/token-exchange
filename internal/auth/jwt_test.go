@@ -53,6 +53,7 @@ func TestNewJWTSigner(t *testing.T) {
 			}`,
 			expectError: false,
 		},
+
 		{
 			name: "missing key ID",
 			keyContent: `{
@@ -66,6 +67,7 @@ func TestNewJWTSigner(t *testing.T) {
 			expectError: true,
 			errorMsg:    "must have a 'kid'",
 		},
+
 		{
 			name: "public key only",
 			keyContent: `{
@@ -79,6 +81,7 @@ func TestNewJWTSigner(t *testing.T) {
 			expectError: true,
 			errorMsg:    "is not a private key",
 		},
+
 		{
 			name:        "invalid json",
 			keyContent:  `invalid json content`,
@@ -122,7 +125,7 @@ func TestNewJWTSigner(t *testing.T) {
 	})
 }
 
-func TestGenerateToken(t *testing.T) {
+func TestGenerateAutojoinToken(t *testing.T) {
 	// Use the real key file from testdata
 	keyPath := filepath.Join("testdata", "private-key.json")
 
@@ -131,12 +134,12 @@ func TestGenerateToken(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, signer)
 
-	// Test GenerateToken
-	t.Run("valid token generation", func(t *testing.T) {
+	// Test GenerateAutojoinToken
+	t.Run("valid autojoin token generation", func(t *testing.T) {
 		orgID := "test-org-123"
 
 		// Generate token
-		tokenString, err := signer.GenerateToken(orgID)
+		tokenString, err := signer.GenerateAutojoinToken(orgID, time.Hour, "autojoin")
 		assert.NoError(t, err)
 		assert.NotEmpty(t, tokenString)
 
@@ -145,7 +148,7 @@ func TestGenerateToken(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Claims() verifies the signature using the public key before extracting claims
-		var claims Claims
+		var claims AutojoinClaims
 		publicKey := signer.GetPublicJWK()
 		err = token.Claims(publicKey.Key, &claims)
 		assert.NoError(t, err)
@@ -154,6 +157,7 @@ func TestGenerateToken(t *testing.T) {
 		assert.Equal(t, orgID, claims.Organization)
 		assert.Equal(t, "token-exchange", claims.Issuer)
 		assert.NotEmpty(t, claims.ID)
+		assert.Equal(t, jwt.Audience{"autojoin"}, claims.Audience)
 
 		// Verify time claims
 		now := time.Now()
@@ -176,22 +180,134 @@ func TestGenerateToken(t *testing.T) {
 
 	// Test with empty organization ID
 	t.Run("empty organization ID", func(t *testing.T) {
-		token, err := signer.GenerateToken("")
-		assert.NoError(t, err) // Should still work with empty org
-		assert.NotEmpty(t, token)
+		token, err := signer.GenerateAutojoinToken("", time.Hour, "autojoin")
+		assert.Error(t, err)
+		assert.Empty(t, token)
+		assert.Contains(t, err.Error(), "organization cannot be empty")
+	})
 
-		// Parse the token and verify its signature using the public key
+	// Test with multiple audiences
+	t.Run("multiple audiences", func(t *testing.T) {
+		tokenString, err := signer.GenerateAutojoinToken("test-org", time.Hour, "autojoin", "locate")
+		assert.NoError(t, err)
+		assert.NotEmpty(t, tokenString)
+
 		supportedAlgs := []jose.SignatureAlgorithm{jose.EdDSA}
-		parsedToken, err := jwt.ParseSigned(token, supportedAlgs)
+		token, err := jwt.ParseSigned(tokenString, supportedAlgs)
 		assert.NoError(t, err)
 
-		var claims Claims
+		var claims AutojoinClaims
 		publicKey := signer.GetPublicJWK()
-		err = parsedToken.Claims(publicKey.Key, &claims) // Also verifies signature
+		err = token.Claims(publicKey.Key, &claims)
 		assert.NoError(t, err)
 
-		// Verify empty org claim
-		assert.Equal(t, "", claims.Organization)
+		assert.Equal(t, jwt.Audience{"autojoin", "locate"}, claims.Audience)
+	})
+
+	// Test with empty audience
+	t.Run("empty audience", func(t *testing.T) {
+		token, err := signer.GenerateAutojoinToken("test-org", time.Hour)
+		assert.Error(t, err)
+		assert.Empty(t, token)
+		assert.Contains(t, err.Error(), "audience cannot be empty")
+	})
+}
+
+func TestGenerateClientIntegrationToken(t *testing.T) {
+	// Use the real key file from testdata
+	keyPath := filepath.Join("testdata", "private-key.json")
+
+	// Initialize a JWTSigner
+	signer, err := NewJWTSigner(keyPath)
+	require.NoError(t, err)
+	require.NotNil(t, signer)
+
+	// Test GenerateClientIntegrationToken
+	t.Run("valid client-integration token generation", func(t *testing.T) {
+		integrationID := "test-integration-456"
+		keyID := "test-key-789"
+
+		// Generate token
+		tokenString, err := signer.GenerateClientIntegrationToken(integrationID, keyID, 20*time.Second, "integration")
+		assert.NoError(t, err)
+		assert.NotEmpty(t, tokenString)
+
+		supportedAlgs := []jose.SignatureAlgorithm{jose.EdDSA}
+		token, err := jwt.ParseSigned(tokenString, supportedAlgs)
+		assert.NoError(t, err)
+
+		// Claims() verifies the signature using the public key before extracting claims
+		var claims ClientIntegrationClaims
+		publicKey := signer.GetPublicJWK()
+		err = token.Claims(publicKey.Key, &claims)
+		assert.NoError(t, err)
+
+		// Verify claims
+		assert.Equal(t, integrationID, claims.IntegrationID)
+		assert.Equal(t, keyID, claims.KeyID)
+		assert.Equal(t, "token-exchange", claims.Issuer)
+		assert.NotEmpty(t, claims.ID)
+		assert.Equal(t, jwt.Audience{"integration"}, claims.Audience)
+
+		// Verify time claims
+		now := time.Now()
+		assert.NotNil(t, claims.IssuedAt)
+		assert.NotNil(t, claims.Expiry)
+		assert.NotNil(t, claims.NotBefore)
+
+		// IssuedAt should be close to now
+		issuedAt := claims.IssuedAt.Time()
+		assert.WithinDuration(t, now, issuedAt, 5*time.Second)
+
+		// Expiry should be about 20 seconds in the future
+		expiry := claims.Expiry.Time()
+		expectedExpiry := issuedAt.Add(20 * time.Second)
+		assert.WithinDuration(t, expectedExpiry, expiry, 5*time.Second)
+
+		// NotBefore should be equal to IssuedAt
+		assert.Equal(t, issuedAt.Unix(), claims.NotBefore.Time().Unix())
+	})
+
+	// Test with empty integrationID
+	t.Run("empty integrationID", func(t *testing.T) {
+		token, err := signer.GenerateClientIntegrationToken("", "test-key", time.Minute, "integration")
+		assert.Error(t, err)
+		assert.Empty(t, token)
+		assert.Contains(t, err.Error(), "integrationID cannot be empty")
+	})
+
+	// Test with empty keyID
+	t.Run("empty keyID", func(t *testing.T) {
+		token, err := signer.GenerateClientIntegrationToken("test-int", "", time.Minute, "integration")
+		assert.Error(t, err)
+		assert.Empty(t, token)
+		assert.Contains(t, err.Error(), "keyID cannot be empty")
+	})
+
+	// Test with multiple audiences
+	t.Run("multiple audiences", func(t *testing.T) {
+		tokenString, err := signer.GenerateClientIntegrationToken("test-int", "test-key", time.Minute, "integration", "ndt")
+		assert.NoError(t, err)
+		assert.NotEmpty(t, tokenString)
+
+		supportedAlgs := []jose.SignatureAlgorithm{jose.EdDSA}
+		token, err := jwt.ParseSigned(tokenString, supportedAlgs)
+		assert.NoError(t, err)
+
+		var claims ClientIntegrationClaims
+		publicKey := signer.GetPublicJWK()
+		err = token.Claims(publicKey.Key, &claims)
+		assert.NoError(t, err)
+
+		assert.Equal(t, jwt.Audience{"integration", "ndt"}, claims.Audience)
+	})
+
+	// Test with empty audience
+	t.Run("empty audience", func(t *testing.T) {
+		token, err := signer.GenerateClientIntegrationToken("test-int", "test-key", time.Minute)
+		assert.Error(t, err)
+		assert.Empty(t, token)
+		assert.Contains(t, err.Error(), "audience cannot be empty")
 	})
 }
 
