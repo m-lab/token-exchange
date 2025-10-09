@@ -13,10 +13,6 @@ import (
 
 const Issuer = "token-exchange"
 
-// DefaultAudience is the default audience for JWT tokens.
-// TODO(rd): Support audience selection (via different URLs or query string)
-var DefaultAudience = jwt.Audience{"autojoin"}
-
 // JWTSigner is a JWT signer that can be used to sign JWT tokens.
 type JWTSigner struct {
 	signer    jose.Signer
@@ -74,10 +70,11 @@ func NewJWTSigner(keyPath string) (*JWTSigner, error) {
 	}, nil
 }
 
-// GenerateToken generates a JWT token for the given organization.
-func (s *JWTSigner) GenerateToken(org string) (string, error) {
+// GenerateToken generates a JWT token for the given organization, expiry time, and audience.
+//
+// This method is thread safe.
+func (s *JWTSigner) GenerateToken(org string, expiry time.Duration, audience ...string) (string, error) {
 	now := time.Now()
-	expiry := now.Add(time.Hour) // Token expiry: 1 hour
 
 	claims := Claims{
 		Organization: org,
@@ -86,8 +83,8 @@ func (s *JWTSigner) GenerateToken(org string) (string, error) {
 			Issuer:    Issuer,
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
-			Expiry:    jwt.NewNumericDate(expiry),
-			Audience:  DefaultAudience,
+			Expiry:    jwt.NewNumericDate(now.Add(expiry)),
+			Audience:  audience,
 		},
 	}
 
@@ -100,6 +97,8 @@ func (s *JWTSigner) GenerateToken(org string) (string, error) {
 }
 
 // GetPublicJWK returns the public key in jose.JSONWebKey format.
+//
+// This method is thread safe as long as the returned key is not modified.
 func (s *JWTSigner) GetPublicJWK() jose.JSONWebKey {
 	return s.publicJWK
 }

@@ -1,5 +1,11 @@
 package store
 
+// TODO(bassosimone): Why is this package public? Who is importing it? Locate
+// does not seem to import this package. Maybe someone else?
+
+// TODO(bassosimone): Most of this file should be refactored to `autojoin.go` and
+// only truly shared structures should stay in `datastore.go`.
+
 import (
 	"context"
 	"crypto/rand"
@@ -10,6 +16,8 @@ import (
 	"cloud.google.com/go/datastore"
 )
 
+// TODO(bassosimone): while we cannot rename the keys we should
+// prefix these variables with `Autojoin`.
 const OrgKind = "Organization"
 const APIKeyKind = "APIKey"
 
@@ -20,10 +28,13 @@ var (
 
 // DatastoreClient is an interface for interacting with Datastore.
 type DatastoreClient interface {
-	Put(ctx context.Context, key *datastore.Key, src interface{}) (*datastore.Key, error)
-	Get(ctx context.Context, key *datastore.Key, dst interface{}) error
-	GetAll(ctx context.Context, q *datastore.Query, dst interface{}) ([]*datastore.Key, error)
+	Put(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error)
+	Get(ctx context.Context, key *datastore.Key, dst any) error
+	GetAll(ctx context.Context, q *datastore.Query, dst any) ([]*datastore.Key, error)
 }
+
+// TODO(bassosimone): the types below this point should be refactored
+// to have the `Autojoin` prefix for clarity.
 
 // Organization represents a Datastore entity for storing organization metadata.
 type Organization struct {
@@ -32,6 +43,9 @@ type Organization struct {
 	CreatedAt             time.Time `datastore:"created_at"`
 	ProbabilityMultiplier *float64  `datastore:"probability_multiplier"`
 }
+
+// TODO(bassosimone): I wonder whether we should upgrade this implementation
+// to use use bcrypt for autojoin or whether we don't care.
 
 // APIKey represents a Datastore entity for storing API key metadata.
 type APIKey struct {
@@ -132,6 +146,54 @@ func (d *DatastoreOrgManager) GetAPIKeys(ctx context.Context, org string) ([]str
 
 // ValidateKey checks if the API key exists and returns the associated organization name.
 func (d *DatastoreOrgManager) ValidateKey(ctx context.Context, key string) (string, error) {
+	// TODO(bassosimone): Discuss design regarding API key structure and JWT size constraints.
+	//
+	// Three options for API key storage:
+	//
+	// 1. Current design: Parent-child NameKey(APIKeyKind, value, parentKey)
+	//
+	// - Pro: Cascade deletes, natural organization hierarchy, per-org key namespacing
+	//
+	// - Con: ValidateKey must query (~slow) since parent is unknown
+	//
+	// 2. Flat design (see store/integration.go): NameKey(kind, keyID, nil) + store parent ID in entity
+	//
+	// - Pro: O(1) Get() for validation (hot path optimization)
+	//
+	// - Con: Deletion requires query, requires globally unique keys (vs per-org uniqueness)
+	//
+	// 3. Scoped keys: Encode parent in API key format, e.g., "{orgName}.{keyValue}"
+	//
+	// - Pro: O(1) for both validation and deletion (best of both worlds)
+	//
+	// - Con: Exposes internal entity relationships, longer API key format
+	//
+	// Related design question: JWT size and query parameter limits.
+	//
+	// JWTs are passed as query parameters to Locate service. URL length limits (~2KB safe) constrain
+	// what claims we include. JWT size is determined by:
+	//
+	// - Claims: int_id vs org_id (similar size), jti (unique token ID), aud, iat, exp
+	//
+	// - Signature: Algorithm choice (ES256 smaller than RS256)
+	//
+	// Note: API key length doesn't affect JWT size (keys aren't in JWT), but does affect token
+	// exchange request size. Typical JWTs are 200-600 bytes base64 encoded, unlikely to hit URL
+	// limits, but worth measuring actual sizes.
+	//
+	// This pull request uses option (2) for integration and autojoin uses (1).
+	//
+	// Also, autojoin should probably use `.Limit(2)` to catch duplicate keys across orgs,
+	// since query by field (not datastore key) could theoretically return multiple results.
+	//
+	// Should we:
+	//
+	// a) Unify on one pattern?
+	//
+	// b) Keep different patterns based on usage (autojoin vs integration validation frequency)?
+	//
+	// c) Consider option (3) for better performance with acceptable trade-offs?
+
 	q := datastore.NewQuery(APIKeyKind).
 		Namespace(d.namespace).
 		FilterField("key", "=", key).Limit(1)

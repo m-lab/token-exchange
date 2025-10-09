@@ -1,34 +1,47 @@
 package handler
 
+// TODO(bassosimone): This should become `autojoin.go` for clarity.
+
 import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 // TokenGenerator defines the interface for generating authentication tokens.
+//
+// TODO(bassosimone): This should become `AutojoinKeyTokenGenerator`.
 type TokenGenerator interface {
-	GenerateToken(org string) (string, error)
+	GenerateToken(org string, expiry time.Duration, audience ...string) (string, error)
 }
 
 // KeyVerifier defines the interface for validating API keys and retrieving
 // organization information.
+//
+// TODO(bassosimone): This should become `AutojoinKeyVerifier`.
 type KeyVerifier interface {
 	ValidateKey(ctx context.Context, apiKey string) (string, error)
 }
 
 // ExchangeHandler handles the exchange of API keys for JWT tokens.
+//
+// TODO(bassosimone): This should become `AutojoinHandler`.
 type ExchangeHandler struct {
 	jwtSigner TokenGenerator
 	store     KeyVerifier
 }
 
 // TokenRequest represents the request payload for token exchange.
+//
+// TODO(bassosimone): This should become `AutojoinRequest`.
 type TokenRequest struct {
 	APIKey string `json:"api_key"`
 }
 
 // TokenResponse represents the response payload containing the generated token.
+//
+// TODO(bassosimone): This should become `AutojoinResponse`.
 type TokenResponse struct {
 	Token string `json:"token"`
 	Error string `json:"error,omitempty"`
@@ -64,7 +77,11 @@ func (h *ExchangeHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate JWT using organization ID
-	token, err := h.jwtSigner.GenerateToken(orgID)
+	const (
+		audience = "autojoin"
+		expiry   = time.Hour
+	)
+	token, err := h.jwtSigner.GenerateToken(orgID, expiry, audience)
 	if err != nil {
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return

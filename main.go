@@ -26,6 +26,11 @@ const (
 	defaultProjectID  = "mlab-sandbox"
 )
 
+// TODO(bassosimone): figure out the intended deployment model. The command line flags allows
+// to specify a single namespace (`platform-credentials` by default) and a single project ID
+// (`mlab-sandbox`). We specified these flags when `main.go` was meant to only support the
+// autojoin use case however now we have two use cases. I suspect a single project ID is 100%
+// fine, but I am missing information about what we're using namespaces for.
 var (
 	port      = flag.Int("port", 8080, "Port to listen on")
 	keyPath   = flag.String("private-key-path", jwkPrivKeyPath, "Path to private key")
@@ -44,19 +49,24 @@ func main() {
 	slog.Info("JWT signer initialized successfully")
 
 	// Initialize Datastore client
+	// TODO(bassosimone): we can use rtx.ValueOrDie here
 	dsClient, err := datastore.NewClient(context.Background(), *projectID)
 	rtx.Must(err, "Failed to initialize Datastore client")
 	defer dsClient.Close()
 
-	dsManager := store.NewDatastoreManager(dsClient, *projectID, *namespace)
+	// Datastore managers for autojoin and client integration registration
+	autojoinManager := store.NewDatastoreManager(dsClient, *projectID, *namespace)
+	integrationManager := store.NewIntegrationManager(dsClient, *projectID, *namespace)
 
 	mux := http.NewServeMux()
 
 	// Register handlers
-	exchangeHandler := handler.NewExchangeHandler(jwtSigner, dsManager)
+	exchangeHandler := handler.NewExchangeHandler(jwtSigner, autojoinManager)
 	jwksHandler := handler.NewJWKSHandler(jwtSigner)
+	integrationHandler := handler.NewIntegrationHandler(jwtSigner, integrationManager)
 
 	mux.HandleFunc("POST /v0/token/autojoin", exchangeHandler.Exchange)
+	mux.HandleFunc("POST /v0/token/integration", integrationHandler.Exchange)
 	mux.HandleFunc("GET /.well-known/jwks.json", jwksHandler.ServeJWKS)
 
 	// Health check endpoint
@@ -72,6 +82,7 @@ func main() {
 	rtx.Must(httpx.ListenAndServeAsync(server), "Failed to start server")
 
 	// Wait for shutdown signal
+	// TODO(bassosimone): consider using signal.NotifyContext
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
