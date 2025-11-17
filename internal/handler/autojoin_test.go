@@ -8,32 +8,39 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type mockKeyVerifier struct{}
+// mockAutojoinKeyVerifier implements [AutojoinKeyVerifier] for [TestAutojoinHandler].
+type mockAutojoinKeyVerifier struct{}
 
-func (m *mockKeyVerifier) ValidateKey(ctx context.Context, apiKey string) (string, error) {
+var _ AutojoinKeyVerifier = &mockAutojoinKeyVerifier{}
+
+func (m *mockAutojoinKeyVerifier) ValidateKey(ctx context.Context, apiKey string) (string, error) {
 	if apiKey == "valid-key" {
 		return "test-org", nil
 	}
 	return "", fmt.Errorf("invalid key")
 }
 
-type mockTokenGenerator struct {
+// mockAutojoinTokenGenerator implements [AutojoinTokenGenerator] for [TestAutojoinHandler].
+type mockAutojoinTokenGenerator struct {
 	shouldFail bool
 }
 
-func (m *mockTokenGenerator) GenerateToken(org string) (string, error) {
+var _ AutojoinTokenGenerator = &mockAutojoinTokenGenerator{}
+
+func (m *mockAutojoinTokenGenerator) GenerateAutojoinToken(org string, expiry time.Duration, audiences ...string) (string, error) {
 	if m.shouldFail {
 		return "", fmt.Errorf("generation failed")
 	}
 	return "test-token", nil
 }
 
-func TestExchange(t *testing.T) {
+func TestAutojoinHandler(t *testing.T) {
 	tests := []struct {
 		name          string
 		method        string
@@ -46,7 +53,7 @@ func TestExchange(t *testing.T) {
 		{
 			name:   "valid request",
 			method: http.MethodPost,
-			body: TokenRequest{
+			body: AutojoinRequest{
 				APIKey: "valid-key",
 			},
 
@@ -54,15 +61,17 @@ func TestExchange(t *testing.T) {
 			wantStatus:    http.StatusOK,
 			wantToken:     true,
 		},
+
 		{
 			name:   "invalid method",
 			method: http.MethodGet,
-			body: TokenRequest{
+			body: AutojoinRequest{
 				APIKey: "valid-key",
 			},
 			wantStatus:   http.StatusMethodNotAllowed,
 			wantErrorMsg: "Method not allowed\n",
 		},
+
 		{
 			name:         "invalid request body",
 			method:       http.MethodPost,
@@ -70,28 +79,30 @@ func TestExchange(t *testing.T) {
 			wantStatus:   http.StatusBadRequest,
 			wantErrorMsg: "Invalid request body\n",
 		},
+
 		{
 			name:   "empty api key",
 			method: http.MethodPost,
-			body:   TokenRequest{},
+			body:   AutojoinRequest{},
 
 			wantStatus:   http.StatusUnauthorized,
 			wantErrorMsg: "Invalid API key\n",
 		},
+
 		{
 			name:   "invalid api key",
 			method: http.MethodPost,
-			body: TokenRequest{
+			body: AutojoinRequest{
 				APIKey: "invalid-key",
 			},
-
 			wantStatus:   http.StatusUnauthorized,
 			wantErrorMsg: "Invalid API key\n",
 		},
+
 		{
 			name:   "token generation failure",
 			method: http.MethodPost,
-			body: TokenRequest{
+			body: AutojoinRequest{
 				APIKey: "valid-key",
 			},
 			tokenGenFails: true,
@@ -103,11 +114,11 @@ func TestExchange(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Initialize mocks
-			mockStore := &mockKeyVerifier{}
-			mockJWT := &mockTokenGenerator{shouldFail: tc.tokenGenFails}
+			mockStore := &mockAutojoinKeyVerifier{}
+			mockJWT := &mockAutojoinTokenGenerator{shouldFail: tc.tokenGenFails}
 
 			// Create handler
-			handler := NewExchangeHandler(mockJWT, mockStore)
+			handler := NewAutojoinHandler(mockJWT, mockStore)
 
 			// Create request
 			var body bytes.Buffer
@@ -132,7 +143,7 @@ func TestExchange(t *testing.T) {
 			}
 
 			if tc.wantToken {
-				var resp TokenResponse
+				var resp AutojoinResponse
 				require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
 				assert.Equal(t, "test-token", resp.Token)
 				assert.Empty(t, resp.Error)

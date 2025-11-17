@@ -1,7 +1,9 @@
+// Package auth implements JWT auth.
 package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -11,23 +13,26 @@ import (
 	"github.com/google/uuid"
 )
 
+// Issuer is the entity that issued the JWTs.
 const Issuer = "token-exchange"
 
-// DefaultAudience is the default audience for JWT tokens.
-// TODO(rd): Support audience selection (via different URLs or query string)
-var DefaultAudience = jwt.Audience{"autojoin"}
-
-// JWTSigner is a JWT signer that can be used to sign JWT tokens.
+// JWTSigner is a JWT signer that can be used to sign JWTs.
 type JWTSigner struct {
 	signer    jose.Signer
 	publicJWK jose.JSONWebKey
 }
 
-// Claims is a JWT claims set that extends jwt.Claims with an additional field
-// for the Organization.
-type Claims struct {
+// AutojoinClaims is a JWT claims set for autojoin tokens.
+type AutojoinClaims struct {
 	jwt.Claims
 	Organization string `json:"org"`
+}
+
+// ClientIntegrationClaims is a JWT claims set for client-integration tokens.
+type ClientIntegrationClaims struct {
+	jwt.Claims
+	IntegrationID string `json:"int_id"`
+	KeyID         string `json:"key_id"`
 }
 
 // NewJWTSigner loads a private key from a JWK file and prepares a signer.
@@ -74,20 +79,66 @@ func NewJWTSigner(keyPath string) (*JWTSigner, error) {
 	}, nil
 }
 
-// GenerateToken generates a JWT token for the given organization.
-func (s *JWTSigner) GenerateToken(org string) (string, error) {
-	now := time.Now()
-	expiry := now.Add(time.Hour) // Token expiry: 1 hour
+// GenerateAutojoinToken generates a JWT token for autojoin with organization ID.
+//
+// This method is thread safe.
+func (s *JWTSigner) GenerateAutojoinToken(org string, expiry time.Duration, audience ...string) (string, error) {
+	if org == "" {
+		return "", errors.New("organization cannot be empty")
+	}
+	if len(audience) <= 0 {
+		return "", errors.New("audience cannot be empty")
+	}
 
-	claims := Claims{
+	now := time.Now()
+
+	claims := AutojoinClaims{
 		Organization: org,
 		Claims: jwt.Claims{
 			ID:        uuid.New().String(),
 			Issuer:    Issuer,
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
-			Expiry:    jwt.NewNumericDate(expiry),
-			Audience:  DefaultAudience,
+			Expiry:    jwt.NewNumericDate(now.Add(expiry)),
+			Audience:  audience,
+		},
+	}
+
+	signedToken, err := jwt.Signed(s.signer).Claims(claims).Serialize()
+	if err != nil {
+		return "", fmt.Errorf("failed to sign claims: %w", err)
+	}
+
+	return signedToken, nil
+}
+
+// GenerateClientIntegrationToken generates a JWT token for client-integration
+// with integration ID and key ID.
+//
+// This method is thread safe.
+func (s *JWTSigner) GenerateClientIntegrationToken(integrationID, keyID string, expiry time.Duration, audience ...string) (string, error) {
+	if integrationID == "" {
+		return "", errors.New("integrationID cannot be empty")
+	}
+	if keyID == "" {
+		return "", errors.New("keyID cannot be empty")
+	}
+	if len(audience) <= 0 {
+		return "", errors.New("audience cannot be empty")
+	}
+
+	now := time.Now()
+
+	claims := ClientIntegrationClaims{
+		IntegrationID: integrationID,
+		KeyID:         keyID,
+		Claims: jwt.Claims{
+			ID:        uuid.New().String(),
+			Issuer:    Issuer,
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			Expiry:    jwt.NewNumericDate(now.Add(expiry)),
+			Audience:  audience,
 		},
 	}
 
@@ -100,6 +151,8 @@ func (s *JWTSigner) GenerateToken(org string) (string, error) {
 }
 
 // GetPublicJWK returns the public key in jose.JSONWebKey format.
+//
+// This method is thread safe as long as the returned key is not modified.
 func (s *JWTSigner) GetPublicJWK() jose.JSONWebKey {
 	return s.publicJWK
 }
