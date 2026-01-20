@@ -147,12 +147,12 @@ func parseAPIKey(apiKey string) (integrationID string, keyID string, keySecret s
 		return "", "", "", fmt.Errorf("%w: integrationID too long (max %d bytes)", ErrInvalidKey, maxIntegrationIDLen)
 	}
 
-	// "ki_<keyID>" => "<keyID>"
+	// "ki_<keyID>"
 	if !strings.HasPrefix(entries[1], keyIDPrefix) {
 		return "", "", "", fmt.Errorf("%w: missing keyIDPrefix", ErrInvalidKey)
 	}
-	keyID = strings.TrimPrefix(entries[1], keyIDPrefix)
-	if keyID == "" {
+	keyID = entries[1]
+	if len(keyID) <= len(keyIDPrefix) {
 		return "", "", "", fmt.Errorf("%w: keyID cannot be empty", ErrInvalidKey)
 	}
 	if len(keyID) > maxKeyIDLen {

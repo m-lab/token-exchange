@@ -109,7 +109,7 @@ func TestParseAPIKey(t *testing.T) {
 			name:              "valid API key",
 			apiKey:            "mlabk.cii_test-integration.ki_abc123.secret456",
 			wantIntegrationID: "test-integration",
-			wantKeyID:         "abc123",
+			wantKeyID:         "ki_abc123",
 			wantKeySecret:     "secret456",
 			wantErr:           false,
 		},
@@ -118,7 +118,7 @@ func TestParseAPIKey(t *testing.T) {
 			name:              "valid API key with complex IDs",
 			apiKey:            "mlabk.cii_org-prod-2024.ki_key-v2-20241030.supersecret",
 			wantIntegrationID: "org-prod-2024",
-			wantKeyID:         "key-v2-20241030",
+			wantKeyID:         "ki_key-v2-20241030",
 			wantKeySecret:     "supersecret",
 			wantErr:           false,
 		},
@@ -225,7 +225,7 @@ func TestParseAPIKey(t *testing.T) {
 			name:              "keySecret exactly 128 bytes (max allowed)",
 			apiKey:            "mlabk.cii_test.ki_abc." + string(make([]byte, 128)),
 			wantIntegrationID: "test",
-			wantKeyID:         "abc",
+			wantKeyID:         "ki_abc",
 			wantKeySecret:     string(make([]byte, 128)),
 			wantErr:           false,
 		},
@@ -241,23 +241,23 @@ func TestParseAPIKey(t *testing.T) {
 			name:              "integrationID exactly 64 bytes (max allowed)",
 			apiKey:            "mlabk.cii_" + string(make([]byte, 64)) + ".ki_abc.secret",
 			wantIntegrationID: string(make([]byte, 64)),
-			wantKeyID:         "abc",
+			wantKeyID:         "ki_abc",
 			wantKeySecret:     "secret",
 			wantErr:           false,
 		},
 
 		{
 			name:        "keyID too long (>64 bytes)",
-			apiKey:      "mlabk.cii_test.ki_" + string(make([]byte, 65)) + ".secret",
+			apiKey:      "mlabk.cii_test.ki_" + string(make([]byte, 62)) + ".secret",
 			wantErr:     true,
 			errContains: "keyID too long",
 		},
 
 		{
 			name:              "keyID exactly 64 bytes (max allowed)",
-			apiKey:            "mlabk.cii_test.ki_" + string(make([]byte, 64)) + ".secret",
+			apiKey:            "mlabk.cii_test.ki_" + string(make([]byte, 61)) + ".secret",
 			wantIntegrationID: "test",
-			wantKeyID:         string(make([]byte, 64)),
+			wantKeyID:         "ki_" + string(make([]byte, 61)),
 			wantKeySecret:     "secret",
 			wantErr:           false,
 		},
@@ -311,7 +311,7 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 				return &fakeFlexibleDatastore{
 					GetFunc: func(ctx context.Context, key *datastore.Key, dst any) error {
 						// Verify hierarchical key structure (t captured from closure)
-						assert.Equal(t, "abc123", key.Name)
+						assert.Equal(t, "ki_abc123", key.Name)
 						assert.Equal(t, clientIntegrationAPIKeyKind, key.Kind)
 						require.NotNil(t, key.Parent, "expected parent key")
 						assert.Equal(t, "test-integration", key.Parent.Name)
@@ -330,7 +330,7 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 				}
 			},
 			wantIntegrationID: "test-integration",
-			wantKeyID:         "abc123",
+			wantKeyID:         "ki_abc123",
 			wantTier:          0,
 			wantErr:           false,
 		},
@@ -352,7 +352,7 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 				}
 			},
 			wantIntegrationID: "premium-org",
-			wantKeyID:         "key999",
+			wantKeyID:         "ki_key999",
 			wantTier:          2,
 			wantErr:           false,
 		},
@@ -517,8 +517,7 @@ func TestFormatAPIKey(t *testing.T) {
 		gotIntegrationID, gotKeyID, gotKeySecret, err := parseAPIKey(apiKey)
 		require.NoError(t, err)
 		assert.Equal(t, integrationID, gotIntegrationID)
-		// parseAPIKey strips the ki_ prefix from keyID
-		assert.Equal(t, "xyz789", gotKeyID)
+		assert.Equal(t, keyID, gotKeyID)
 		assert.Equal(t, keySecret, gotKeySecret)
 	})
 }
