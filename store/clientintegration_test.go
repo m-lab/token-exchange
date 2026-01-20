@@ -493,12 +493,27 @@ func TestClientIntegrationManager_CreateIntegration(t *testing.T) {
 
 				meta := src.(*clientIntegrationMeta)
 				assert.False(t, meta.CreatedAt.IsZero())
+				assert.Equal(t, "Test integration description", meta.Description)
 				return key, nil
 			},
 		}
 
 		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
-		err := manager.CreateIntegration(context.Background(), "test-integration")
+		err := manager.CreateIntegration(context.Background(), "test-integration", "Test integration description")
+		require.NoError(t, err)
+	})
+
+	t.Run("success with empty description", func(t *testing.T) {
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				meta := src.(*clientIntegrationMeta)
+				assert.Equal(t, "", meta.Description)
+				return key, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		err := manager.CreateIntegration(context.Background(), "test-integration", "")
 		require.NoError(t, err)
 	})
 
@@ -510,7 +525,7 @@ func TestClientIntegrationManager_CreateIntegration(t *testing.T) {
 		}
 
 		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
-		err := manager.CreateIntegration(context.Background(), "test-integration")
+		err := manager.CreateIntegration(context.Background(), "test-integration", "Test description")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "datastore error")
 	})

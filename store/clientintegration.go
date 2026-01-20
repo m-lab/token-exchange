@@ -231,15 +231,17 @@ type CreateAPIKeyResult struct {
 
 // clientIntegrationMeta represents a datastore entity for storing integration metadata.
 type clientIntegrationMeta struct {
-	CreatedAt time.Time `datastore:"created_at"`
+	CreatedAt   time.Time `datastore:"created_at"`
+	Description string    `datastore:"description"`
 }
 
 // CreateIntegration creates a new integration entity in Datastore.
-func (m *ClientIntegrationManager) CreateIntegration(ctx context.Context, integrationID string) error {
+func (m *ClientIntegrationManager) CreateIntegration(ctx context.Context, integrationID, description string) error {
 	key := datastore.NameKey(clientIntegrationMetaKind, integrationID, nil)
 	key.Namespace = m.namespace
 	meta := &clientIntegrationMeta{
-		CreatedAt: time.Now().UTC(),
+		CreatedAt:   time.Now().UTC(),
+		Description: description,
 	}
 	_, err := m.client.Put(ctx, key, meta)
 	return err
