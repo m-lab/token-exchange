@@ -35,6 +35,13 @@ const (
 	clientIntegrationAPIKeyStatusActive = "active"
 )
 
+// Function variables for testing - allows mocking random generation.
+var (
+	generateKeyIDFunc  = GenerateKeyID
+	generateAPIKeyFunc = GenerateAPIKey
+	randRead           = rand.Read
+)
+
 /*-
 Design: Client Integration API Key Structure
 
@@ -208,7 +215,7 @@ func (m *ClientIntegrationManager) ValidateKey(ctx context.Context, apiKey strin
 // GenerateKeyID generates a random key ID in the format "ki_" + 16 hex characters.
 func GenerateKeyID() (string, error) {
 	b := make([]byte, 8) // 8 bytes = 16 hex characters
-	_, err := rand.Read(b)
+	_, err := randRead(b)
 	if err != nil {
 		return "", err
 	}
@@ -254,14 +261,14 @@ func (m *ClientIntegrationManager) CreateAPIKey(ctx context.Context, integration
 	// Generate key ID if not provided
 	if keyID == "" {
 		var err error
-		keyID, err = GenerateKeyID()
+		keyID, err = generateKeyIDFunc()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate key ID: %w", err)
 		}
 	}
 
 	// Generate the key secret
-	keySecret, err := GenerateAPIKey()
+	keySecret, err := generateAPIKeyFunc()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate key secret: %w", err)
 	}

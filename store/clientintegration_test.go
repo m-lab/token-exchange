@@ -458,6 +458,21 @@ func TestGenerateKeyID(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEqual(t, keyID1, keyID2)
 	})
+
+	t.Run("rand.Read error", func(t *testing.T) {
+		// Save original and restore after test
+		originalFunc := randRead
+		defer func() { randRead = originalFunc }()
+
+		randRead = func(b []byte) (int, error) {
+			return 0, errors.New("random source unavailable")
+		}
+
+		keyID, err := GenerateKeyID()
+		require.Error(t, err)
+		assert.Empty(t, keyID)
+		assert.Contains(t, err.Error(), "random source unavailable")
+	})
 }
 
 func TestFormatAPIKey(t *testing.T) {
@@ -604,5 +619,52 @@ func TestClientIntegrationManager_CreateAPIKey(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "failed to store API key")
+	})
+
+	t.Run("generateKeyID error", func(t *testing.T) {
+		// Save original and restore after test
+		originalFunc := generateKeyIDFunc
+		defer func() { generateKeyIDFunc = originalFunc }()
+
+		generateKeyIDFunc = func() (string, error) {
+			return "", errors.New("random generation failed")
+		}
+
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				t.Fatal("Put should not be called when key generation fails")
+				return nil, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "", "Test key")
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "failed to generate key ID")
+	})
+
+	t.Run("generateAPIKey error", func(t *testing.T) {
+		// Save original and restore after test
+		originalFunc := generateAPIKeyFunc
+		defer func() { generateAPIKeyFunc = originalFunc }()
+
+		generateAPIKeyFunc = func() (string, error) {
+			return "", errors.New("random generation failed")
+		}
+
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				t.Fatal("Put should not be called when key generation fails")
+				return nil, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		// Use manual keyID to bypass generateKeyIDFunc
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "ki_manual", "Test key")
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "failed to generate key secret")
 	})
 }
