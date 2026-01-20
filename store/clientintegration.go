@@ -81,6 +81,7 @@ type clientIntegrationAPIKey struct {
 	CreatedAt   time.Time `datastore:"created_at"`  // Creation timestamp
 	Description string    `datastore:"description"` // Human-readable description
 	Status      string    `datastore:"status"`      // active, revoked, etc.
+	Tier        int       `datastore:"tier"`        // Service tier (0 = default)
 }
 
 // ClientIntegrationManager maintains state for managing client
@@ -173,12 +174,12 @@ func parseAPIKey(apiKey string) (integrationID string, keyID string, keySecret s
 //
 // This method is thread safe.
 //
-// The return value consists of client-integration ID, key ID, and an error.
-func (m *ClientIntegrationManager) ValidateKey(ctx context.Context, apiKey string) (string, string, error) {
+// The return value consists of client-integration ID, key ID, tier, and an error.
+func (m *ClientIntegrationManager) ValidateKey(ctx context.Context, apiKey string) (string, string, int, error) {
 	// Parse the API key to extract the integrationID, the keyID and the keySecret
 	integrationID, keyID, keySecret, err := parseAPIKey(apiKey)
 	if err != nil {
-		return "", "", err
+		return "", "", 0, err
 	}
 
 	// Perform O(1) direct lookup using NameKey and nested key
@@ -188,7 +189,7 @@ func (m *ClientIntegrationManager) ValidateKey(ctx context.Context, apiKey strin
 	key.Namespace = m.namespace
 	var entity clientIntegrationAPIKey
 	if err := m.client.Get(ctx, key, &entity); err != nil {
-		return "", "", fmt.Errorf("%w: cannot Get from datastore: %w", ErrInvalidKey, err)
+		return "", "", 0, fmt.Errorf("%w: cannot Get from datastore: %w", ErrInvalidKey, err)
 	}
 
 	// Reject keys whose status is not active
@@ -196,7 +197,7 @@ func (m *ClientIntegrationManager) ValidateKey(ctx context.Context, apiKey strin
 	// Assumption: setting an organization as inactive implies setting all its keys
 	// as inactive, therefore we don't need further checks here
 	if entity.Status != clientIntegrationAPIKeyStatusActive {
-		return "", "", fmt.Errorf("%w: the key is not active", ErrInvalidKey)
+		return "", "", 0, fmt.Errorf("%w: the key is not active", ErrInvalidKey)
 	}
 
 	// Compute SHA-256 hash of the provided key secret
@@ -205,11 +206,11 @@ func (m *ClientIntegrationManager) ValidateKey(ctx context.Context, apiKey strin
 
 	// Compare with stored hash using constant-time comparison to prevent timing attacks
 	if subtle.ConstantTimeCompare([]byte(computedHash), []byte(entity.KeyHash)) != 1 {
-		return "", "", fmt.Errorf("%w: secret does not match stored hash", ErrInvalidKey)
+		return "", "", 0, fmt.Errorf("%w: secret does not match stored hash", ErrInvalidKey)
 	}
 
 	// My job here is done! ⛵🌕
-	return integrationID, keyID, nil
+	return integrationID, keyID, entity.Tier, nil
 }
 
 // GenerateKeyID generates a random key ID in the format "ki_" + 16 hex characters.
@@ -256,8 +257,9 @@ func (m *ClientIntegrationManager) CreateIntegration(ctx context.Context, integr
 
 // CreateAPIKey creates a new API key for an integration in Datastore.
 // If keyID is empty, a random key ID will be generated.
+// The tier parameter specifies the service tier (0 = default).
 // Returns the integration ID, key ID, and the full API key string.
-func (m *ClientIntegrationManager) CreateAPIKey(ctx context.Context, integrationID, keyID, description string) (*CreateAPIKeyResult, error) {
+func (m *ClientIntegrationManager) CreateAPIKey(ctx context.Context, integrationID, keyID, description string, tier int) (*CreateAPIKeyResult, error) {
 	// Generate key ID if not provided
 	if keyID == "" {
 		var err error
@@ -291,6 +293,7 @@ func (m *ClientIntegrationManager) CreateAPIKey(ctx context.Context, integration
 		CreatedAt:   time.Now().UTC(),
 		Description: description,
 		Status:      clientIntegrationAPIKeyStatusActive,
+		Tier:        tier,
 	}
 
 	// Store in Datastore

@@ -223,12 +223,12 @@ func TestGenerateClientIntegrationToken(t *testing.T) {
 	require.NotNil(t, signer)
 
 	// Test GenerateClientIntegrationToken
-	t.Run("valid client-integration token generation", func(t *testing.T) {
+	t.Run("valid client-integration token generation with default tier", func(t *testing.T) {
 		integrationID := "test-integration-456"
 		keyID := "test-key-789"
 
-		// Generate token
-		tokenString, err := signer.GenerateClientIntegrationToken(integrationID, keyID, 20*time.Second, "integration")
+		// Generate token with tier 0
+		tokenString, err := signer.GenerateClientIntegrationToken(integrationID, keyID, 0, 20*time.Second, "integration")
 		assert.NoError(t, err)
 		assert.NotEmpty(t, tokenString)
 
@@ -245,6 +245,7 @@ func TestGenerateClientIntegrationToken(t *testing.T) {
 		// Verify claims
 		assert.Equal(t, integrationID, claims.IntegrationID)
 		assert.Equal(t, keyID, claims.KeyID)
+		assert.Equal(t, 0, claims.Tier)
 		assert.Equal(t, "token-exchange", claims.Issuer)
 		assert.NotEmpty(t, claims.ID)
 		assert.Equal(t, jwt.Audience{"integration"}, claims.Audience)
@@ -268,9 +269,29 @@ func TestGenerateClientIntegrationToken(t *testing.T) {
 		assert.Equal(t, issuedAt.Unix(), claims.NotBefore.Time().Unix())
 	})
 
+	// Test with tier 2
+	t.Run("valid client-integration token generation with tier 2", func(t *testing.T) {
+		tokenString, err := signer.GenerateClientIntegrationToken("premium-int", "premium-key", 2, time.Minute, "integration")
+		assert.NoError(t, err)
+		assert.NotEmpty(t, tokenString)
+
+		supportedAlgs := []jose.SignatureAlgorithm{jose.EdDSA}
+		token, err := jwt.ParseSigned(tokenString, supportedAlgs)
+		assert.NoError(t, err)
+
+		var claims ClientIntegrationClaims
+		publicKey := signer.GetPublicJWK()
+		err = token.Claims(publicKey.Key, &claims)
+		assert.NoError(t, err)
+
+		assert.Equal(t, "premium-int", claims.IntegrationID)
+		assert.Equal(t, "premium-key", claims.KeyID)
+		assert.Equal(t, 2, claims.Tier)
+	})
+
 	// Test with empty integrationID
 	t.Run("empty integrationID", func(t *testing.T) {
-		token, err := signer.GenerateClientIntegrationToken("", "test-key", time.Minute, "integration")
+		token, err := signer.GenerateClientIntegrationToken("", "test-key", 0, time.Minute, "integration")
 		assert.Error(t, err)
 		assert.Empty(t, token)
 		assert.Contains(t, err.Error(), "integrationID cannot be empty")
@@ -278,7 +299,7 @@ func TestGenerateClientIntegrationToken(t *testing.T) {
 
 	// Test with empty keyID
 	t.Run("empty keyID", func(t *testing.T) {
-		token, err := signer.GenerateClientIntegrationToken("test-int", "", time.Minute, "integration")
+		token, err := signer.GenerateClientIntegrationToken("test-int", "", 0, time.Minute, "integration")
 		assert.Error(t, err)
 		assert.Empty(t, token)
 		assert.Contains(t, err.Error(), "keyID cannot be empty")
@@ -286,7 +307,7 @@ func TestGenerateClientIntegrationToken(t *testing.T) {
 
 	// Test with multiple audiences
 	t.Run("multiple audiences", func(t *testing.T) {
-		tokenString, err := signer.GenerateClientIntegrationToken("test-int", "test-key", time.Minute, "integration", "ndt")
+		tokenString, err := signer.GenerateClientIntegrationToken("test-int", "test-key", 0, time.Minute, "integration", "ndt")
 		assert.NoError(t, err)
 		assert.NotEmpty(t, tokenString)
 
@@ -304,7 +325,7 @@ func TestGenerateClientIntegrationToken(t *testing.T) {
 
 	// Test with empty audience
 	t.Run("empty audience", func(t *testing.T) {
-		token, err := signer.GenerateClientIntegrationToken("test-int", "test-key", time.Minute)
+		token, err := signer.GenerateClientIntegrationToken("test-int", "test-key", 0, time.Minute)
 		assert.Error(t, err)
 		assert.Empty(t, token)
 		assert.Contains(t, err.Error(), "audience cannot be empty")

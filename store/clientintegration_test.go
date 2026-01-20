@@ -300,6 +300,7 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 		setupFake         func(*testing.T) *fakeFlexibleDatastore
 		wantIntegrationID string
 		wantKeyID         string
+		wantTier          int
 		wantErr           bool
 		errContains       string
 	}{
@@ -322,6 +323,7 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 						*entity = clientIntegrationAPIKey{
 							KeyHash: testHash,
 							Status:  clientIntegrationAPIKeyStatusActive,
+							Tier:    0,
 						}
 						return nil
 					},
@@ -329,6 +331,29 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 			},
 			wantIntegrationID: "test-integration",
 			wantKeyID:         "abc123",
+			wantTier:          0,
+			wantErr:           false,
+		},
+
+		{
+			name:   "valid key with tier 2",
+			apiKey: "mlabk.cii_premium-org.ki_key999." + testSecret,
+			setupFake: func(t *testing.T) *fakeFlexibleDatastore {
+				return &fakeFlexibleDatastore{
+					GetFunc: func(ctx context.Context, key *datastore.Key, dst any) error {
+						entity := dst.(*clientIntegrationAPIKey)
+						*entity = clientIntegrationAPIKey{
+							KeyHash: testHash,
+							Status:  clientIntegrationAPIKeyStatusActive,
+							Tier:    2,
+						}
+						return nil
+					},
+				}
+			},
+			wantIntegrationID: "premium-org",
+			wantKeyID:         "key999",
+			wantTier:          2,
 			wantErr:           false,
 		},
 
@@ -419,7 +444,7 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 			fake := tt.setupFake(t)
 			manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
 
-			gotIntegrationID, gotKeyID, err := manager.ValidateKey(context.Background(), tt.apiKey)
+			gotIntegrationID, gotKeyID, gotTier, err := manager.ValidateKey(context.Background(), tt.apiKey)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -430,6 +455,7 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantIntegrationID, gotIntegrationID)
 			assert.Equal(t, tt.wantKeyID, gotKeyID)
+			assert.Equal(t, tt.wantTier, gotTier)
 		})
 	}
 }
@@ -547,7 +573,7 @@ func TestClientIntegrationManager_CreateIntegration(t *testing.T) {
 }
 
 func TestClientIntegrationManager_CreateAPIKey(t *testing.T) {
-	t.Run("success with auto-generated keyID", func(t *testing.T) {
+	t.Run("success with auto-generated keyID and default tier", func(t *testing.T) {
 		var capturedKey *datastore.Key
 		var capturedEntity *clientIntegrationAPIKey
 
@@ -560,7 +586,7 @@ func TestClientIntegrationManager_CreateAPIKey(t *testing.T) {
 		}
 
 		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
-		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "", "Test key")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "", "Test key", 0)
 		require.NoError(t, err)
 
 		// Check result
@@ -579,6 +605,7 @@ func TestClientIntegrationManager_CreateAPIKey(t *testing.T) {
 		// Check entity
 		assert.Equal(t, "Test key", capturedEntity.Description)
 		assert.Equal(t, clientIntegrationAPIKeyStatusActive, capturedEntity.Status)
+		assert.Equal(t, 0, capturedEntity.Tier)
 		assert.NotEmpty(t, capturedEntity.KeyHash)
 		assert.False(t, capturedEntity.CreatedAt.IsZero())
 
@@ -587,6 +614,24 @@ func TestClientIntegrationManager_CreateAPIKey(t *testing.T) {
 		require.NoError(t, err)
 		hash := sha256.Sum256([]byte(keySecret))
 		assert.Equal(t, hex.EncodeToString(hash[:]), capturedEntity.KeyHash)
+	})
+
+	t.Run("success with tier 2", func(t *testing.T) {
+		var capturedEntity *clientIntegrationAPIKey
+
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				capturedEntity = src.(*clientIntegrationAPIKey)
+				return key, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		result, err := manager.CreateAPIKey(context.Background(), "premium-integration", "", "Premium key", 2)
+		require.NoError(t, err)
+
+		assert.Equal(t, "premium-integration", result.IntegrationID)
+		assert.Equal(t, 2, capturedEntity.Tier)
 	})
 
 	t.Run("success with manual keyID", func(t *testing.T) {
@@ -600,7 +645,7 @@ func TestClientIntegrationManager_CreateAPIKey(t *testing.T) {
 		}
 
 		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
-		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "ki_custom123", "Custom key")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "ki_custom123", "Custom key", 0)
 		require.NoError(t, err)
 
 		assert.Equal(t, "ki_custom123", result.KeyID)
@@ -615,7 +660,7 @@ func TestClientIntegrationManager_CreateAPIKey(t *testing.T) {
 		}
 
 		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
-		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "", "Test key")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "", "Test key", 0)
 		require.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "failed to store API key")
@@ -638,7 +683,7 @@ func TestClientIntegrationManager_CreateAPIKey(t *testing.T) {
 		}
 
 		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
-		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "", "Test key")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "", "Test key", 0)
 		require.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "failed to generate key ID")
@@ -662,7 +707,7 @@ func TestClientIntegrationManager_CreateAPIKey(t *testing.T) {
 
 		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
 		// Use manual keyID to bypass generateKeyIDFunc
-		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "ki_manual", "Test key")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "ki_manual", "Test key", 0)
 		require.Error(t, err)
 		assert.Nil(t, result)
 		assert.Contains(t, err.Error(), "failed to generate key secret")

@@ -26,6 +26,7 @@ var (
 	keyID                  = flag.String("key-id", "", "Key ID (auto-generated if not provided)")
 	integrationDescription = flag.String("integration-description", "", "Human-readable description for the integration")
 	keyDescription         = flag.String("key-description", "", "Human-readable description for the API key")
+	keyTier                = flag.Int("key-tier", 0, "Service tier for the API key (0 = default)")
 )
 
 func main() {
@@ -57,8 +58,8 @@ func main() {
 	log.Printf("Integration created successfully")
 
 	// Create API key
-	log.Printf("Creating API key...")
-	result, err := manager.CreateAPIKey(ctx, *integrationID, *keyID, *keyDescription)
+	log.Printf("Creating API key with tier %d...", *keyTier)
+	result, err := manager.CreateAPIKey(ctx, *integrationID, *keyID, *keyDescription, *keyTier)
 	rtx.Must(err, "Failed to create API key")
 
 	// Print result
