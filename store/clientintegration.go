@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -20,6 +21,13 @@ import (
 const (
 	clientIntegrationMetaKind   = "IntegrationMeta"
 	clientIntegrationAPIKeyKind = "IntegrationAPIKey"
+)
+
+// Exported constants for API key format prefixes.
+const (
+	ClientIntegrationAPIKeyPrefix = "mlabk."
+	ClientIntegrationIDPrefix     = "cii_"
+	ClientIntegrationKeyIDPrefix  = "ki_"
 )
 
 // Enumerate the possible statuses of an API key.
@@ -195,4 +203,99 @@ func (m *ClientIntegrationManager) ValidateKey(ctx context.Context, apiKey strin
 
 	// My job here is done! ⛵🌕
 	return integrationID, keyID, nil
+}
+
+// GenerateKeyID generates a random key ID in the format "ki_" + 16 hex characters.
+func GenerateKeyID() (string, error) {
+	b := make([]byte, 8) // 8 bytes = 16 hex characters
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return ClientIntegrationKeyIDPrefix + hex.EncodeToString(b), nil
+}
+
+// FormatAPIKey formats an API key from its components.
+func FormatAPIKey(integrationID, keyID, keySecret string) string {
+	return ClientIntegrationAPIKeyPrefix +
+		ClientIntegrationIDPrefix + integrationID + "." +
+		keyID + "." + keySecret
+}
+
+// CreateAPIKeyResult holds the result of creating an API key.
+type CreateAPIKeyResult struct {
+	IntegrationID string
+	KeyID         string
+	APIKey        string
+}
+
+// clientIntegrationMeta represents a datastore entity for storing integration metadata.
+type clientIntegrationMeta struct {
+	CreatedAt time.Time `datastore:"created_at"`
+}
+
+// CreateIntegration creates a new integration entity in Datastore.
+func (m *ClientIntegrationManager) CreateIntegration(ctx context.Context, integrationID string) error {
+	key := datastore.NameKey(clientIntegrationMetaKind, integrationID, nil)
+	key.Namespace = m.namespace
+	meta := &clientIntegrationMeta{
+		CreatedAt: time.Now().UTC(),
+	}
+	_, err := m.client.Put(ctx, key, meta)
+	return err
+}
+
+// CreateAPIKey creates a new API key for an integration in Datastore.
+// If keyID is empty, a random key ID will be generated.
+// Returns the integration ID, key ID, and the full API key string.
+func (m *ClientIntegrationManager) CreateAPIKey(ctx context.Context, integrationID, keyID, description string) (*CreateAPIKeyResult, error) {
+	// Generate key ID if not provided
+	if keyID == "" {
+		var err error
+		keyID, err = GenerateKeyID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate key ID: %w", err)
+		}
+	}
+
+	// Generate the key secret
+	keySecret, err := GenerateAPIKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate key secret: %w", err)
+	}
+
+	// Compute SHA-256 hash of the key secret
+	hash := sha256.Sum256([]byte(keySecret))
+	keyHash := hex.EncodeToString(hash[:])
+
+	// Create parent key for the integration
+	parentKey := datastore.NameKey(clientIntegrationMetaKind, integrationID, nil)
+	parentKey.Namespace = m.namespace
+
+	// Create the API key entity key
+	apiKeyKey := datastore.NameKey(clientIntegrationAPIKeyKind, keyID, parentKey)
+	apiKeyKey.Namespace = m.namespace
+
+	// Create the API key entity
+	entity := &clientIntegrationAPIKey{
+		KeyHash:     keyHash,
+		CreatedAt:   time.Now().UTC(),
+		Description: description,
+		Status:      clientIntegrationAPIKeyStatusActive,
+	}
+
+	// Store in Datastore
+	_, err = m.client.Put(ctx, apiKeyKey, entity)
+	if err != nil {
+		return nil, fmt.Errorf("failed to store API key: %w", err)
+	}
+
+	// Format the full API key
+	apiKey := FormatAPIKey(integrationID, keyID, keySecret)
+
+	return &CreateAPIKeyResult{
+		IntegrationID: integrationID,
+		KeyID:         keyID,
+		APIKey:        apiKey,
+	}, nil
 }

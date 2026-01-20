@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"strings"
 	"testing"
 
 	"cloud.google.com/go/datastore"
@@ -430,4 +432,162 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 			assert.Equal(t, tt.wantKeyID, gotKeyID)
 		})
 	}
+}
+
+func TestGenerateKeyID(t *testing.T) {
+	t.Run("format and uniqueness", func(t *testing.T) {
+		keyID1, err := GenerateKeyID()
+		require.NoError(t, err)
+
+		// Check prefix
+		assert.True(t, strings.HasPrefix(keyID1, ClientIntegrationKeyIDPrefix))
+
+		// Check length: "ki_" (3) + 16 hex chars = 19
+		assert.Len(t, keyID1, 19)
+
+		// Check that the suffix is valid hex
+		suffix := strings.TrimPrefix(keyID1, ClientIntegrationKeyIDPrefix)
+		assert.Len(t, suffix, 16)
+		for _, c := range suffix {
+			assert.True(t, (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'),
+				"expected hex character, got %c", c)
+		}
+
+		// Check uniqueness
+		keyID2, err := GenerateKeyID()
+		require.NoError(t, err)
+		assert.NotEqual(t, keyID1, keyID2)
+	})
+}
+
+func TestFormatAPIKey(t *testing.T) {
+	t.Run("correct format", func(t *testing.T) {
+		apiKey := FormatAPIKey("test-integration", "ki_abc123", "secret456")
+		assert.Equal(t, "mlabk.cii_test-integration.ki_abc123.secret456", apiKey)
+	})
+
+	t.Run("round-trip with parseAPIKey", func(t *testing.T) {
+		integrationID := "my-org"
+		keyID := "ki_xyz789"
+		keySecret := "mysupersecret"
+
+		apiKey := FormatAPIKey(integrationID, keyID, keySecret)
+
+		gotIntegrationID, gotKeyID, gotKeySecret, err := parseAPIKey(apiKey)
+		require.NoError(t, err)
+		assert.Equal(t, integrationID, gotIntegrationID)
+		// parseAPIKey strips the ki_ prefix from keyID
+		assert.Equal(t, "xyz789", gotKeyID)
+		assert.Equal(t, keySecret, gotKeySecret)
+	})
+}
+
+func TestClientIntegrationManager_CreateIntegration(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				assert.Equal(t, clientIntegrationMetaKind, key.Kind)
+				assert.Equal(t, "test-integration", key.Name)
+				assert.Equal(t, "test-namespace", key.Namespace)
+				assert.Nil(t, key.Parent)
+
+				meta := src.(*clientIntegrationMeta)
+				assert.False(t, meta.CreatedAt.IsZero())
+				return key, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		err := manager.CreateIntegration(context.Background(), "test-integration")
+		require.NoError(t, err)
+	})
+
+	t.Run("datastore error", func(t *testing.T) {
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				return nil, errors.New("datastore error")
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		err := manager.CreateIntegration(context.Background(), "test-integration")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "datastore error")
+	})
+}
+
+func TestClientIntegrationManager_CreateAPIKey(t *testing.T) {
+	t.Run("success with auto-generated keyID", func(t *testing.T) {
+		var capturedKey *datastore.Key
+		var capturedEntity *clientIntegrationAPIKey
+
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				capturedKey = key
+				capturedEntity = src.(*clientIntegrationAPIKey)
+				return key, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "", "Test key")
+		require.NoError(t, err)
+
+		// Check result
+		assert.Equal(t, "test-integration", result.IntegrationID)
+		assert.True(t, strings.HasPrefix(result.KeyID, ClientIntegrationKeyIDPrefix))
+		assert.True(t, strings.HasPrefix(result.APIKey, ClientIntegrationAPIKeyPrefix))
+
+		// Check datastore key structure
+		assert.Equal(t, clientIntegrationAPIKeyKind, capturedKey.Kind)
+		assert.Equal(t, result.KeyID, capturedKey.Name)
+		assert.Equal(t, "test-namespace", capturedKey.Namespace)
+		require.NotNil(t, capturedKey.Parent)
+		assert.Equal(t, clientIntegrationMetaKind, capturedKey.Parent.Kind)
+		assert.Equal(t, "test-integration", capturedKey.Parent.Name)
+
+		// Check entity
+		assert.Equal(t, "Test key", capturedEntity.Description)
+		assert.Equal(t, clientIntegrationAPIKeyStatusActive, capturedEntity.Status)
+		assert.NotEmpty(t, capturedEntity.KeyHash)
+		assert.False(t, capturedEntity.CreatedAt.IsZero())
+
+		// Verify the API key can be validated
+		_, _, keySecret, err := parseAPIKey(result.APIKey)
+		require.NoError(t, err)
+		hash := sha256.Sum256([]byte(keySecret))
+		assert.Equal(t, hex.EncodeToString(hash[:]), capturedEntity.KeyHash)
+	})
+
+	t.Run("success with manual keyID", func(t *testing.T) {
+		var capturedKey *datastore.Key
+
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				capturedKey = key
+				return key, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "ki_custom123", "Custom key")
+		require.NoError(t, err)
+
+		assert.Equal(t, "ki_custom123", result.KeyID)
+		assert.Equal(t, "ki_custom123", capturedKey.Name)
+	})
+
+	t.Run("datastore error", func(t *testing.T) {
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				return nil, errors.New("datastore error")
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "", "Test key")
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "failed to store API key")
+	})
 }
