@@ -35,10 +35,10 @@ func main() {
 
 	// Validate required flags
 	if *project == "" {
-		log.Fatal("Error: -project is required")
+		log.Fatal("error: -project is required")
 	}
 	if *integrationID == "" {
-		log.Fatal("Error: -integration-id is required")
+		log.Fatal("error: -integration-id is required")
 	}
 
 	ctx := context.Background()
