@@ -4,12 +4,26 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"cloud.google.com/go/datastore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// makeStorageKey creates a unique storage key for the fake datastore.
+// It handles both parent-child hierarchies and standalone keys.
+func makeStorageKey(key *datastore.Key) string {
+	if key.Parent != nil {
+		return fmt.Sprintf("%s/%s/%s/%s/%s",
+			key.Namespace, key.Parent.Kind, key.Parent.Name, key.Kind, key.Name)
+	}
+	return fmt.Sprintf("%s/%s/%s", key.Namespace, key.Kind, key.Name)
+}
 
 // fakeFlexibleDatastore implements [DatastoreClient] using a function-based pattern
 // that allows tests to (1) define exactly the behavior they need and (2) embed
@@ -107,7 +121,7 @@ func TestParseAPIKey(t *testing.T) {
 			name:              "valid API key",
 			apiKey:            "mlabk.cii_test-integration.ki_abc123.secret456",
 			wantIntegrationID: "test-integration",
-			wantKeyID:         "abc123",
+			wantKeyID:         "ki_abc123",
 			wantKeySecret:     "secret456",
 			wantErr:           false,
 		},
@@ -116,7 +130,7 @@ func TestParseAPIKey(t *testing.T) {
 			name:              "valid API key with complex IDs",
 			apiKey:            "mlabk.cii_org-prod-2024.ki_key-v2-20241030.supersecret",
 			wantIntegrationID: "org-prod-2024",
-			wantKeyID:         "key-v2-20241030",
+			wantKeyID:         "ki_key-v2-20241030",
 			wantKeySecret:     "supersecret",
 			wantErr:           false,
 		},
@@ -223,7 +237,7 @@ func TestParseAPIKey(t *testing.T) {
 			name:              "keySecret exactly 128 bytes (max allowed)",
 			apiKey:            "mlabk.cii_test.ki_abc." + string(make([]byte, 128)),
 			wantIntegrationID: "test",
-			wantKeyID:         "abc",
+			wantKeyID:         "ki_abc",
 			wantKeySecret:     string(make([]byte, 128)),
 			wantErr:           false,
 		},
@@ -239,23 +253,23 @@ func TestParseAPIKey(t *testing.T) {
 			name:              "integrationID exactly 64 bytes (max allowed)",
 			apiKey:            "mlabk.cii_" + string(make([]byte, 64)) + ".ki_abc.secret",
 			wantIntegrationID: string(make([]byte, 64)),
-			wantKeyID:         "abc",
+			wantKeyID:         "ki_abc",
 			wantKeySecret:     "secret",
 			wantErr:           false,
 		},
 
 		{
 			name:        "keyID too long (>64 bytes)",
-			apiKey:      "mlabk.cii_test.ki_" + string(make([]byte, 65)) + ".secret",
+			apiKey:      "mlabk.cii_test.ki_" + string(make([]byte, 62)) + ".secret",
 			wantErr:     true,
 			errContains: "keyID too long",
 		},
 
 		{
 			name:              "keyID exactly 64 bytes (max allowed)",
-			apiKey:            "mlabk.cii_test.ki_" + string(make([]byte, 64)) + ".secret",
+			apiKey:            "mlabk.cii_test.ki_" + string(make([]byte, 61)) + ".secret",
 			wantIntegrationID: "test",
-			wantKeyID:         string(make([]byte, 64)),
+			wantKeyID:         "ki_" + string(make([]byte, 61)),
 			wantKeySecret:     "secret",
 			wantErr:           false,
 		},
@@ -298,6 +312,7 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 		setupFake         func(*testing.T) *fakeFlexibleDatastore
 		wantIntegrationID string
 		wantKeyID         string
+		wantTier          int
 		wantErr           bool
 		errContains       string
 	}{
@@ -308,7 +323,7 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 				return &fakeFlexibleDatastore{
 					GetFunc: func(ctx context.Context, key *datastore.Key, dst any) error {
 						// Verify hierarchical key structure (t captured from closure)
-						assert.Equal(t, "abc123", key.Name)
+						assert.Equal(t, "ki_abc123", key.Name)
 						assert.Equal(t, clientIntegrationAPIKeyKind, key.Kind)
 						require.NotNil(t, key.Parent, "expected parent key")
 						assert.Equal(t, "test-integration", key.Parent.Name)
@@ -320,13 +335,37 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 						*entity = clientIntegrationAPIKey{
 							KeyHash: testHash,
 							Status:  clientIntegrationAPIKeyStatusActive,
+							Tier:    0,
 						}
 						return nil
 					},
 				}
 			},
 			wantIntegrationID: "test-integration",
-			wantKeyID:         "abc123",
+			wantKeyID:         "ki_abc123",
+			wantTier:          0,
+			wantErr:           false,
+		},
+
+		{
+			name:   "valid key with tier 2",
+			apiKey: "mlabk.cii_premium-org.ki_key999." + testSecret,
+			setupFake: func(t *testing.T) *fakeFlexibleDatastore {
+				return &fakeFlexibleDatastore{
+					GetFunc: func(ctx context.Context, key *datastore.Key, dst any) error {
+						entity := dst.(*clientIntegrationAPIKey)
+						*entity = clientIntegrationAPIKey{
+							KeyHash: testHash,
+							Status:  clientIntegrationAPIKeyStatusActive,
+							Tier:    2,
+						}
+						return nil
+					},
+				}
+			},
+			wantIntegrationID: "premium-org",
+			wantKeyID:         "ki_key999",
+			wantTier:          2,
 			wantErr:           false,
 		},
 
@@ -417,7 +456,7 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 			fake := tt.setupFake(t)
 			manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
 
-			gotIntegrationID, gotKeyID, err := manager.ValidateKey(context.Background(), tt.apiKey)
+			gotIntegrationID, gotKeyID, gotTier, err := manager.ValidateKey(context.Background(), tt.apiKey)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -428,6 +467,374 @@ func TestClientIntegrationManager_ValidateKey(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantIntegrationID, gotIntegrationID)
 			assert.Equal(t, tt.wantKeyID, gotKeyID)
+			assert.Equal(t, tt.wantTier, gotTier)
 		})
 	}
+}
+
+func TestGenerateKeyID(t *testing.T) {
+	t.Run("format and uniqueness", func(t *testing.T) {
+		keyID1, err := GenerateKeyID()
+		require.NoError(t, err)
+
+		// Check prefix
+		assert.True(t, strings.HasPrefix(keyID1, ClientIntegrationKeyIDPrefix))
+
+		// Check length: "ki_" (3) + 16 hex chars = 19
+		assert.Len(t, keyID1, 19)
+
+		// Check that the suffix is valid hex
+		suffix := strings.TrimPrefix(keyID1, ClientIntegrationKeyIDPrefix)
+		assert.Len(t, suffix, 16)
+		for _, c := range suffix {
+			assert.True(t, (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'),
+				"expected hex character, got %c", c)
+		}
+
+		// Check uniqueness
+		keyID2, err := GenerateKeyID()
+		require.NoError(t, err)
+		assert.NotEqual(t, keyID1, keyID2)
+	})
+
+	t.Run("rand.Read error", func(t *testing.T) {
+		// Save original and restore after test
+		originalFunc := randRead
+		defer func() { randRead = originalFunc }()
+
+		randRead = func(b []byte) (int, error) {
+			return 0, errors.New("random source unavailable")
+		}
+
+		keyID, err := GenerateKeyID()
+		require.Error(t, err)
+		assert.Empty(t, keyID)
+		assert.Contains(t, err.Error(), "random source unavailable")
+	})
+}
+
+func TestFormatAPIKey(t *testing.T) {
+	t.Run("correct format", func(t *testing.T) {
+		apiKey := FormatAPIKey("test-integration", "ki_abc123", "secret456")
+		assert.Equal(t, "mlabk.cii_test-integration.ki_abc123.secret456", apiKey)
+	})
+
+	t.Run("round-trip with parseAPIKey", func(t *testing.T) {
+		integrationID := "my-org"
+		keyID := "ki_xyz789"
+		keySecret := "mysupersecret"
+
+		apiKey := FormatAPIKey(integrationID, keyID, keySecret)
+
+		gotIntegrationID, gotKeyID, gotKeySecret, err := parseAPIKey(apiKey)
+		require.NoError(t, err)
+		assert.Equal(t, integrationID, gotIntegrationID)
+		assert.Equal(t, keyID, gotKeyID)
+		assert.Equal(t, keySecret, gotKeySecret)
+	})
+}
+
+func TestClientIntegrationManager_CreateIntegration(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				assert.Equal(t, clientIntegrationMetaKind, key.Kind)
+				assert.Equal(t, "test-integration", key.Name)
+				assert.Equal(t, "test-namespace", key.Namespace)
+				assert.Nil(t, key.Parent)
+
+				meta := src.(*clientIntegrationMeta)
+				assert.False(t, meta.CreatedAt.IsZero())
+				assert.Equal(t, "Test integration description", meta.Description)
+				return key, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		err := manager.CreateIntegration(context.Background(), "test-integration", "Test integration description")
+		require.NoError(t, err)
+	})
+
+	t.Run("success with empty description", func(t *testing.T) {
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				meta := src.(*clientIntegrationMeta)
+				assert.Equal(t, "", meta.Description)
+				return key, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		err := manager.CreateIntegration(context.Background(), "test-integration", "")
+		require.NoError(t, err)
+	})
+
+	t.Run("datastore error", func(t *testing.T) {
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				return nil, errors.New("datastore error")
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		err := manager.CreateIntegration(context.Background(), "test-integration", "Test description")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "datastore error")
+	})
+}
+
+func TestClientIntegrationManager_CreateAPIKey(t *testing.T) {
+	t.Run("success with auto-generated keyID and default tier", func(t *testing.T) {
+		var capturedKey *datastore.Key
+		var capturedEntity *clientIntegrationAPIKey
+
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				capturedKey = key
+				capturedEntity = src.(*clientIntegrationAPIKey)
+				return key, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "", "Test key", 0)
+		require.NoError(t, err)
+
+		// Check result
+		assert.Equal(t, "test-integration", result.IntegrationID)
+		assert.True(t, strings.HasPrefix(result.KeyID, ClientIntegrationKeyIDPrefix))
+		assert.True(t, strings.HasPrefix(result.APIKey, ClientIntegrationAPIKeyPrefix))
+
+		// Check datastore key structure
+		assert.Equal(t, clientIntegrationAPIKeyKind, capturedKey.Kind)
+		assert.Equal(t, result.KeyID, capturedKey.Name)
+		assert.Equal(t, "test-namespace", capturedKey.Namespace)
+		require.NotNil(t, capturedKey.Parent)
+		assert.Equal(t, clientIntegrationMetaKind, capturedKey.Parent.Kind)
+		assert.Equal(t, "test-integration", capturedKey.Parent.Name)
+
+		// Check entity
+		assert.Equal(t, "Test key", capturedEntity.Description)
+		assert.Equal(t, clientIntegrationAPIKeyStatusActive, capturedEntity.Status)
+		assert.Equal(t, 0, capturedEntity.Tier)
+		assert.NotEmpty(t, capturedEntity.KeyHash)
+		assert.False(t, capturedEntity.CreatedAt.IsZero())
+
+		// Verify the API key can be validated
+		_, _, keySecret, err := parseAPIKey(result.APIKey)
+		require.NoError(t, err)
+		hash := sha256.Sum256([]byte(keySecret))
+		assert.Equal(t, hex.EncodeToString(hash[:]), capturedEntity.KeyHash)
+	})
+
+	t.Run("success with tier 2", func(t *testing.T) {
+		var capturedEntity *clientIntegrationAPIKey
+
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				capturedEntity = src.(*clientIntegrationAPIKey)
+				return key, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		result, err := manager.CreateAPIKey(context.Background(), "premium-integration", "", "Premium key", 2)
+		require.NoError(t, err)
+
+		assert.Equal(t, "premium-integration", result.IntegrationID)
+		assert.Equal(t, 2, capturedEntity.Tier)
+	})
+
+	t.Run("success with manual keyID", func(t *testing.T) {
+		var capturedKey *datastore.Key
+
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				capturedKey = key
+				return key, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "ki_custom123", "Custom key", 0)
+		require.NoError(t, err)
+
+		assert.Equal(t, "ki_custom123", result.KeyID)
+		assert.Equal(t, "ki_custom123", capturedKey.Name)
+	})
+
+	t.Run("datastore error", func(t *testing.T) {
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				return nil, errors.New("datastore error")
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "", "Test key", 0)
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "failed to store API key")
+	})
+
+	t.Run("generateKeyID error", func(t *testing.T) {
+		// Save original and restore after test
+		originalFunc := generateKeyIDFunc
+		defer func() { generateKeyIDFunc = originalFunc }()
+
+		generateKeyIDFunc = func() (string, error) {
+			return "", errors.New("random generation failed")
+		}
+
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				t.Fatal("Put should not be called when key generation fails")
+				return nil, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "", "Test key", 0)
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "failed to generate key ID")
+	})
+
+	t.Run("generateAPIKey error", func(t *testing.T) {
+		// Save original and restore after test
+		originalFunc := generateAPIKeyFunc
+		defer func() { generateAPIKeyFunc = originalFunc }()
+
+		generateAPIKeyFunc = func() (string, error) {
+			return "", errors.New("random generation failed")
+		}
+
+		fake := &fakeFlexibleDatastore{
+			PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+				t.Fatal("Put should not be called when key generation fails")
+				return nil, nil
+			},
+		}
+
+		manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+		// Use manual keyID to bypass generateKeyIDFunc
+		result, err := manager.CreateAPIKey(context.Background(), "test-integration", "ki_manual", "Test key", 0)
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "failed to generate key secret")
+	})
+}
+
+func TestClientIntegrationManager_EndToEnd(t *testing.T) {
+	// Shared state captured by closures - simulates actual datastore behavior
+	store := make(map[string][]byte)
+
+	fake := &fakeFlexibleDatastore{
+		PutFunc: func(ctx context.Context, key *datastore.Key, src any) (*datastore.Key, error) {
+			data, err := json.Marshal(src)
+			if err != nil {
+				return nil, err
+			}
+			store[makeStorageKey(key)] = data
+			return key, nil
+		},
+		GetFunc: func(ctx context.Context, key *datastore.Key, dst any) error {
+			data, ok := store[makeStorageKey(key)]
+			if !ok {
+				return datastore.ErrNoSuchEntity
+			}
+			return json.Unmarshal(data, dst)
+		},
+	}
+
+	manager := NewClientIntegrationManager(fake, "test-project", "test-namespace")
+	ctx := context.Background()
+
+	t.Run("basic flow: CreateIntegration -> CreateAPIKey -> ValidateKey", func(t *testing.T) {
+		// Step 1: Create integration
+		err := manager.CreateIntegration(ctx, "acme-corp", "ACME Corporation integration")
+		require.NoError(t, err)
+
+		// Step 2: Create API key
+		result, err := manager.CreateAPIKey(ctx, "acme-corp", "", "Production key", 0)
+		require.NoError(t, err)
+		assert.Equal(t, "acme-corp", result.IntegrationID)
+		assert.True(t, strings.HasPrefix(result.KeyID, ClientIntegrationKeyIDPrefix))
+		assert.True(t, strings.HasPrefix(result.APIKey, ClientIntegrationAPIKeyPrefix))
+
+		// Step 3: Validate the key
+		integrationID, keyID, tier, err := manager.ValidateKey(ctx, result.APIKey)
+		require.NoError(t, err)
+		assert.Equal(t, "acme-corp", integrationID)
+		assert.Equal(t, result.KeyID, keyID)
+		assert.Equal(t, 0, tier)
+	})
+
+	t.Run("multiple keys for same integration", func(t *testing.T) {
+		// Create integration
+		err := manager.CreateIntegration(ctx, "multi-key-org", "Organization with multiple keys")
+		require.NoError(t, err)
+
+		// Create multiple API keys
+		key1, err := manager.CreateAPIKey(ctx, "multi-key-org", "", "Key 1", 0)
+		require.NoError(t, err)
+
+		key2, err := manager.CreateAPIKey(ctx, "multi-key-org", "", "Key 2", 1)
+		require.NoError(t, err)
+
+		key3, err := manager.CreateAPIKey(ctx, "multi-key-org", "", "Key 3", 2)
+		require.NoError(t, err)
+
+		// All keys should be distinct
+		assert.NotEqual(t, key1.KeyID, key2.KeyID)
+		assert.NotEqual(t, key2.KeyID, key3.KeyID)
+		assert.NotEqual(t, key1.KeyID, key3.KeyID)
+
+		// All keys should validate correctly with their respective tiers
+		_, _, tier1, err := manager.ValidateKey(ctx, key1.APIKey)
+		require.NoError(t, err)
+		assert.Equal(t, 0, tier1)
+
+		_, _, tier2, err := manager.ValidateKey(ctx, key2.APIKey)
+		require.NoError(t, err)
+		assert.Equal(t, 1, tier2)
+
+		_, _, tier3, err := manager.ValidateKey(ctx, key3.APIKey)
+		require.NoError(t, err)
+		assert.Equal(t, 2, tier3)
+	})
+
+	t.Run("tier preservation", func(t *testing.T) {
+		// Create integration
+		err := manager.CreateIntegration(ctx, "premium-org", "Premium organization")
+		require.NoError(t, err)
+
+		// Create API key with tier 2
+		result, err := manager.CreateAPIKey(ctx, "premium-org", "", "Premium key", 2)
+		require.NoError(t, err)
+
+		// Validate and verify tier is returned correctly
+		integrationID, keyID, tier, err := manager.ValidateKey(ctx, result.APIKey)
+		require.NoError(t, err)
+		assert.Equal(t, "premium-org", integrationID)
+		assert.Equal(t, result.KeyID, keyID)
+		assert.Equal(t, 2, tier)
+	})
+
+	t.Run("wrong secret fails validation", func(t *testing.T) {
+		// Create integration and key
+		err := manager.CreateIntegration(ctx, "secure-org", "Secure organization")
+		require.NoError(t, err)
+
+		result, err := manager.CreateAPIKey(ctx, "secure-org", "", "Secure key", 0)
+		require.NoError(t, err)
+
+		// Tamper with the secret by replacing it with a different value
+		tamperedKey := FormatAPIKey("secure-org", result.KeyID, "wrong-secret-here")
+
+		// Validation should fail
+		_, _, _, err = manager.ValidateKey(ctx, tamperedKey)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "secret does not match stored hash")
+	})
 }

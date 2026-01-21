@@ -19,11 +19,11 @@ type mockClientIntegrationKeyVerifier struct{}
 
 var _ ClientIntegrationKeyVerifier = &mockClientIntegrationKeyVerifier{}
 
-func (m *mockClientIntegrationKeyVerifier) ValidateKey(ctx context.Context, apiKey string) (string, string, error) {
+func (m *mockClientIntegrationKeyVerifier) ValidateKey(ctx context.Context, apiKey string) (string, string, int, error) {
 	if apiKey == "valid-key" {
-		return "test-integration", "test-key-id", nil
+		return "test-integration", "test-key-id", 0, nil
 	}
-	return "", "", fmt.Errorf("invalid key")
+	return "", "", 0, fmt.Errorf("invalid key")
 }
 
 // mockClientIntegrationTokenGenerator implements [ClientIntegrationTokenGenerator] for [TestClientIntegrationHandler].
@@ -33,7 +33,7 @@ type mockClientIntegrationTokenGenerator struct {
 
 var _ ClientIntegrationTokenGenerator = &mockClientIntegrationTokenGenerator{}
 
-func (m *mockClientIntegrationTokenGenerator) GenerateClientIntegrationToken(integrationID, keyID string, expiry time.Duration, audiences ...string) (string, error) {
+func (m *mockClientIntegrationTokenGenerator) GenerateClientIntegrationToken(integrationID, keyID string, tier int, expiry time.Duration, audiences ...string) (string, error) {
 	if m.shouldFail {
 		return "", fmt.Errorf("generation failed")
 	}

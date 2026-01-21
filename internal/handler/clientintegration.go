@@ -12,13 +12,13 @@ import (
 // ClientIntegrationTokenGenerator defines the interface for generating
 // client-integration authentication tokens.
 type ClientIntegrationTokenGenerator interface {
-	GenerateClientIntegrationToken(integrationID, keyID string, expiry time.Duration, audience ...string) (string, error)
+	GenerateClientIntegrationToken(integrationID, keyID string, tier int, expiry time.Duration, audience ...string) (string, error)
 }
 
 // ClientIntegrationKeyVerifier defines the interface for validating
-// API keys and retrieving the integration ID and key ID.
+// API keys and retrieving the integration ID, key ID, and tier.
 type ClientIntegrationKeyVerifier interface {
-	ValidateKey(ctx context.Context, apiKey string) (integrationID string, keyID string, err error)
+	ValidateKey(ctx context.Context, apiKey string) (integrationID string, keyID string, tier int, err error)
 }
 
 // ClientIntegrationHandler exchanges integration API keys for short-lived JWTs.
@@ -69,15 +69,15 @@ func (h *ClientIntegrationHandler) Exchange(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Verify API key and get integration ID and key ID
-	integrationID, keyID, err := h.store.ValidateKey(r.Context(), req.APIKey)
+	// Verify API key and get integration ID, key ID, and tier
+	integrationID, keyID, tier, err := h.store.ValidateKey(r.Context(), req.APIKey)
 	if err != nil {
 		http.Error(w, "Invalid API key", http.StatusUnauthorized)
 		return
 	}
 
-	// Generate JWT using integration ID and key ID
-	token, err := h.jwtSigner.GenerateClientIntegrationToken(integrationID, keyID, clientIntegrationExpiry, clientIntegrationAudience)
+	// Generate JWT using integration ID, key ID, and tier
+	token, err := h.jwtSigner.GenerateClientIntegrationToken(integrationID, keyID, tier, clientIntegrationExpiry, clientIntegrationAudience)
 	if err != nil {
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return

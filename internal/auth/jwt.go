@@ -33,6 +33,7 @@ type ClientIntegrationClaims struct {
 	jwt.Claims
 	IntegrationID string `json:"int_id"`
 	KeyID         string `json:"key_id"`
+	Tier          int    `json:"tier"`
 }
 
 // NewJWTSigner loads a private key from a JWK file and prepares a signer.
@@ -113,10 +114,10 @@ func (s *JWTSigner) GenerateAutojoinToken(org string, expiry time.Duration, audi
 }
 
 // GenerateClientIntegrationToken generates a JWT token for client-integration
-// with integration ID and key ID.
+// with integration ID, key ID, and service tier.
 //
 // This method is thread safe.
-func (s *JWTSigner) GenerateClientIntegrationToken(integrationID, keyID string, expiry time.Duration, audience ...string) (string, error) {
+func (s *JWTSigner) GenerateClientIntegrationToken(integrationID, keyID string, tier int, expiry time.Duration, audience ...string) (string, error) {
 	if integrationID == "" {
 		return "", errors.New("integrationID cannot be empty")
 	}
@@ -132,6 +133,7 @@ func (s *JWTSigner) GenerateClientIntegrationToken(integrationID, keyID string, 
 	claims := ClientIntegrationClaims{
 		IntegrationID: integrationID,
 		KeyID:         keyID,
+		Tier:          tier,
 		Claims: jwt.Claims{
 			ID:        uuid.New().String(),
 			Issuer:    Issuer,
