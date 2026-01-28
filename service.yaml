@@ -1,0 +1,57 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: auth
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/container-dependencies: '{"auth":["otel-collector"]}'
+    spec:
+      containers:
+        - name: auth
+          image: IMAGE_PLACEHOLDER
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PROJECT_ID
+              value: "MLAB_PROJECT_PLACEHOLDER"
+            - name: PLATFORM_NS
+              value: "PLATFORM_NS_PLACEHOLDER"
+          volumeMounts:
+            - name: jwk-secret
+              mountPath: /secrets
+              readOnly: true
+          resources:
+            limits:
+              memory: 256Mi
+              cpu: "1"
+        - name: otel-collector
+          image: OTEL_IMAGE_PLACEHOLDER
+          env:
+            - name: PROMETHEUS_ENDPOINT
+              value: "https://prometheus-basicauth.MLAB_PROJECT_PLACEHOLDER.measurementlab.net/api/v1/write"
+            - name: PROMETHEUS_USER
+              valueFrom:
+                secretKeyRef:
+                  name: prometheus-support-build-prom-auth-user
+                  key: latest
+            - name: PROMETHEUS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: prometheus-support-build-prom-auth-pass
+                  key: latest
+          startupProbe:
+            httpGet:
+              path: /
+              port: 13133
+            initialDelaySeconds: 0
+            periodSeconds: 1
+            failureThreshold: 10
+      volumes:
+        - name: jwk-secret
+          secret:
+            secretName: SECRET_NAME_PLACEHOLDER
+            items:
+              - key: latest
+                path: jwk-priv.json
