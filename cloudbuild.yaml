@@ -3,12 +3,13 @@ substitutions:
   _REGION: us-east1
   _SERVICE_NAME: auth
   _SECRET_NAME: auth-private-key
-  _DOMAIN: auth.${PROJECT_ID}.measurementlab.net
   _PLATFORM_NS: platform-credentials
+
 steps:
-  # 1. Build the container image
+  # 1. Build the auth container image
   - name: "gcr.io/cloud-builders/docker"
     id: Build
+    waitFor: ['-']
     args:
       [
         "build",
@@ -19,7 +20,21 @@ steps:
         ".",
       ]
 
-  # 2. Push the container image to Artifact Registry
+  # 2. Build the otel-collector sidecar image
+  - name: "gcr.io/cloud-builders/docker"
+    id: BuildOtel
+    waitFor: ['-']
+    args:
+      [
+        "build",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/otel-collector:$BUILD_ID",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/otel-collector:latest",
+        "otel-collector",
+      ]
+
+  # 3. Push the auth container image to Artifact Registry
   - name: "gcr.io/cloud-builders/docker"
     id: Push
     args:
@@ -27,32 +42,43 @@ steps:
         "push",
         "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:${BUILD_ID}",
       ]
-    waitFor: ["Build"] # Ensure build is finished before pushing
+    waitFor: ["Build"]
 
-  # 3. Deploy to Cloud Run
-  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
-    id: Deploy
-    entrypoint: gcloud
+  # 4. Push otel-collector image to Artifact Registry
+  - name: "gcr.io/cloud-builders/docker"
+    id: PushOtel
     args:
       [
-        "run",
-        "deploy",
-        "${_SERVICE_NAME}",
-        "--image",
-        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:$BUILD_ID",
-        "--platform",
-        "managed",
-        "--region",
-        "${_REGION}",
-        "--allow-unauthenticated",
-        "--set-secrets=/secrets/jwk-priv.json=${_SECRET_NAME}:latest",
-        "--set-env-vars=PROJECT_ID=${PROJECT_ID},PLATFORM_NS=${_PLATFORM_NS}",
-        "--memory=256Mi",
-        "--cpu=1",
-        "--project=${PROJECT_ID}",
+        "push",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/otel-collector:${BUILD_ID}",
       ]
-    waitFor: ["Push"]
+    waitFor: ["BuildOtel"]
+
+  # 5. Substitute placeholders in service.yaml and deploy
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: Deploy
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        sed -e "s|OTEL_IMAGE_PLACEHOLDER|${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/otel-collector:${BUILD_ID}|g" \
+            -e "s|IMAGE_PLACEHOLDER|${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:${BUILD_ID}|g" \
+            -e "s|MLAB_PROJECT_PLACEHOLDER|${PROJECT_ID}|g" \
+            -e "s|PLATFORM_NS_PLACEHOLDER|${_PLATFORM_NS}|g" \
+            -e "s|SECRET_NAME_PLACEHOLDER|${_SECRET_NAME}|g" \
+            service.yaml > service-deploy.yaml
+        gcloud run services replace service-deploy.yaml \
+          --region=${_REGION} \
+          --project=${PROJECT_ID}
+        gcloud run services set-iam-policy ${_SERVICE_NAME} \
+          --region=${_REGION} \
+          --project=${PROJECT_ID} \
+          --quiet \
+          <(echo '{"bindings":[{"role":"roles/run.invoker","members":["allUsers"]}]}')
+    waitFor: ["Push", "PushOtel"]
 
 images:
   - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:$BUILD_ID"
   - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/${_SERVICE_NAME}:latest"
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/otel-collector:$BUILD_ID"
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/m-lab/otel-collector:latest"

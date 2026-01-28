@@ -14,10 +14,13 @@ import (
 	"cloud.google.com/go/datastore"
 	"github.com/m-lab/go/flagx"
 	"github.com/m-lab/go/httpx"
+	"github.com/m-lab/go/prometheusx"
 	"github.com/m-lab/go/rtx"
 	"github.com/m-lab/token-exchange/internal/auth"
 	"github.com/m-lab/token-exchange/internal/handler"
+	"github.com/m-lab/token-exchange/metrics"
 	"github.com/m-lab/token-exchange/store"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
@@ -43,6 +46,8 @@ func main() {
 	flag.Parse()
 	rtx.Must(flagx.ArgsFromEnv(flag.CommandLine), "Could not parse env args")
 
+	prometheusx.MustServeMetrics()
+
 	slog.Info("Starting token exchange server...")
 
 	jwtSigner := rtx.ValueOrDie(auth.NewJWTSigner(*keyPath))
@@ -65,8 +70,24 @@ func main() {
 	jwksHandler := handler.NewJWKSHandler(jwtSigner)
 	integrationHandler := handler.NewClientIntegrationHandler(jwtSigner, clientIntegrationManager)
 
-	mux.HandleFunc("POST /v0/token/autojoin", exchangeHandler.Exchange)
-	mux.HandleFunc("POST /v0/token/integration", integrationHandler.Exchange)
+	// Wrap handlers with promhttp instrumentation.
+	autojoinHandler := promhttp.InstrumentHandlerDuration(
+		metrics.AutojoinRequestDuration,
+		promhttp.InstrumentHandlerCounter(
+			metrics.AutojoinRequestsTotal,
+			http.HandlerFunc(exchangeHandler.Exchange),
+		),
+	)
+	integrationInstrumented := promhttp.InstrumentHandlerDuration(
+		metrics.IntegrationRequestDuration,
+		promhttp.InstrumentHandlerCounter(
+			metrics.IntegrationRequestsTotal,
+			http.HandlerFunc(integrationHandler.Exchange),
+		),
+	)
+
+	mux.Handle("POST /v0/token/autojoin", autojoinHandler)
+	mux.Handle("POST /v0/token/integration", integrationInstrumented)
 	mux.HandleFunc("GET /.well-known/jwks.json", jwksHandler.ServeJWKS)
 
 	// Health check endpoint
