@@ -52,3 +52,6 @@ spec:
         - name: jwk-secret
           secret:
             secretName: SECRET_NAME_PLACEHOLDER
+            items:
+              - key: latest
+                path: jwk-priv.json
