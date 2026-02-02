@@ -87,9 +87,9 @@ sequenceDiagram
     participant TokenExchange
     participant Datastore
 
-    Client->>TokenExchange: POST /v0/token/autojoin (API key)
+    Client->>TokenExchange: POST /v0/token/integration (API key)
     TokenExchange->>Datastore: Validate API key
-    Datastore-->>TokenExchange: Organization/Integration info
+    Datastore-->>TokenExchange: Integration info
     TokenExchange->>TokenExchange: Generate JWT (1-hour expiry)
     TokenExchange-->>Client: Signed JWT token
 
