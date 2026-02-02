@@ -92,8 +92,4 @@ sequenceDiagram
     Datastore-->>TokenExchange: Integration info
     TokenExchange->>TokenExchange: Generate JWT (20-second expiry)
     TokenExchange-->>Client: Signed JWT token
-
-    Note over Client: Later, to verify tokens
-    Client->>TokenExchange: GET /.well-known/jwks.json
-    TokenExchange-->>Client: Public keys (JWKS)
 ```
