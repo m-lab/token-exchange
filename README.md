@@ -46,7 +46,7 @@ gcloud builds submit --config cloudbuild.yaml
 
 ## Configuration
 
-Configuration is via command-line flags. All flags can also be set via environment variables (e.g., `-port` becomes `PORT`).
+Configuration is via command-line flags. All flags can also be set via environment variables (e.g., `-port` becomes `PORT`, `-platform-ns` becomes `PLATFORM_NS`).
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -66,14 +66,15 @@ Creates a new client integration and API key in Datastore.
 go run ./cmd/create-integration -project=mlab-sandbox -integration-id=my-integration
 ```
 
-Options:
-- `-project` (required): Google Cloud project ID
-- `-integration-id` (required): Integration ID
-- `-namespace`: Datastore namespace (default: `client-integration`)
-- `-key-id`: Key ID (auto-generated if not provided)
-- `-integration-description`: Human-readable description for the integration
-- `-key-description`: Human-readable description for the API key
-- `-key-tier`: Service tier for the API key (default: 0)
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-project` | (required) | Google Cloud project ID |
+| `-integration-id` | (required) | Integration ID |
+| `-namespace` | `client-integration` | Datastore namespace |
+| `-key-id` | (auto-generated) | Key ID |
+| `-integration-description` | | Human-readable description for the integration |
+| `-key-description` | | Human-readable description for the API key |
+| `-key-tier` | `0` | Service tier for the API key |
 
 ## Usage
 
