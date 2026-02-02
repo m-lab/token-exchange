@@ -90,7 +90,7 @@ sequenceDiagram
     Client->>TokenExchange: POST /v0/token/integration (API key)
     TokenExchange->>Datastore: Validate API key
     Datastore-->>TokenExchange: Integration info
-    TokenExchange->>TokenExchange: Generate JWT (1-hour expiry)
+    TokenExchange->>TokenExchange: Generate JWT (20-second expiry)
     TokenExchange-->>Client: Signed JWT token
 
     Note over Client: Later, to verify tokens
