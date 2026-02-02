@@ -75,6 +75,51 @@ Options:
 - `-key-description`: Human-readable description for the API key
 - `-key-tier`: Service tier for the API key (default: 0)
 
+## Usage
+
+### Integration Token Exchange
+
+Exchange an API key for a short-lived JWT token.
+
+**Request:**
+
+```bash
+curl -X POST https://your-service-url/v0/token/integration \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "your-api-key"}'
+```
+
+**Response:**
+
+```json
+{
+  "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6Ii..."
+}
+```
+
+**JWT Claims:**
+
+| Claim | Description |
+|-------|-------------|
+| `int_id` | Integration ID |
+| `key_id` | API Key ID |
+| `tier` | Service tier |
+| `aud` | Audience (`integration`) |
+| `exp` | Expiration time (20 seconds from issue) |
+| `iat` | Issued at time |
+| `iss` | Issuer |
+| `jti` | Unique token ID |
+| `nbf` | Not valid before time |
+
+**Error Responses:**
+
+| Status | Description |
+|--------|-------------|
+| `400 Bad Request` | Invalid request body |
+| `401 Unauthorized` | Invalid API key |
+| `405 Method Not Allowed` | Request method is not POST |
+| `500 Internal Server Error` | Failed to generate token |
+
 ## Architecture
 
 The service validates API keys stored in Google Cloud Datastore and returns signed JWT tokens. Tokens are signed using RS256 with keys loaded from a JWK file.
