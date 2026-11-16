@@ -39,7 +39,9 @@ var (
 		"Datastore namespace for platform credentials (used for autojoin)")
 	clientIntegrationNamespace = flag.String("client-integration-ns", clientIntegrationNS,
 		"Datastore namespace for client-integration credentials")
-	projectID = flag.String("project-id", defaultProjectID, "Google Cloud project ID")
+	projectID     = flag.String("project-id", defaultProjectID, "Google Cloud project ID")
+	storageIssuer = flag.String("storage-issuer", "",
+		"Issuer URL for storage tokens (https://...); if empty, POST /v0/token/storage is not registered")
 )
 
 func main() {
@@ -88,6 +90,18 @@ func main() {
 
 	mux.Handle("POST /v0/token/autojoin", autojoinHandler)
 	mux.Handle("POST /v0/token/integration", integrationInstrumented)
+	if *storageIssuer != "" {
+		storageExchange := handler.NewStorageHandler(jwtSigner, autojoinManager, *storageIssuer)
+		storageInstrumented := promhttp.InstrumentHandlerDuration(
+			metrics.StorageRequestDuration,
+			promhttp.InstrumentHandlerCounter(
+				metrics.StorageRequestsTotal,
+				http.HandlerFunc(storageExchange.Exchange),
+			),
+		)
+		mux.Handle("POST /v0/token/storage", storageInstrumented)
+		slog.Info("Storage token endpoint enabled", "issuer", *storageIssuer)
+	}
 	mux.HandleFunc("GET /.well-known/jwks.json", jwksHandler.ServeJWKS)
 
 	// Health check endpoint

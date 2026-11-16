@@ -113,6 +113,46 @@ func (s *JWTSigner) GenerateAutojoinToken(org string, expiry time.Duration, audi
 	return signedToken, nil
 }
 
+// GenerateStorageToken generates a JWT token for Google Cloud Storage access
+// through Workload Identity Federation. Unlike [JWTSigner.GenerateAutojoinToken],
+// the issuer is caller-provided (Google requires an https:// issuer URL equal to
+// the token's iss) and the subject is set to the organization.
+//
+// This method is thread safe.
+func (s *JWTSigner) GenerateStorageToken(org string, expiry time.Duration, issuer string, audience ...string) (string, error) {
+	if org == "" {
+		return "", errors.New("organization cannot be empty")
+	}
+	if issuer == "" {
+		return "", errors.New("issuer cannot be empty")
+	}
+	if len(audience) <= 0 {
+		return "", errors.New("audience cannot be empty")
+	}
+
+	now := time.Now()
+
+	claims := AutojoinClaims{
+		Organization: org,
+		Claims: jwt.Claims{
+			ID:        uuid.New().String(),
+			Issuer:    issuer,
+			Subject:   org,
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			Expiry:    jwt.NewNumericDate(now.Add(expiry)),
+			Audience:  audience,
+		},
+	}
+
+	signedToken, err := jwt.Signed(s.signer).Claims(claims).Serialize()
+	if err != nil {
+		return "", fmt.Errorf("failed to sign claims: %w", err)
+	}
+
+	return signedToken, nil
+}
+
 // GenerateClientIntegrationToken generates a JWT token for client-integration
 // with integration ID, key ID, and service tier.
 //
