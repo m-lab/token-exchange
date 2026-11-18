@@ -15,6 +15,7 @@ A Cloud Run service that exchanges API keys for signed JWTs for M-Lab services.
 | `POST` | `/v0/token/storage` | Exchange autojoin API key for a JWT to be exchanged by Google STS for Cloud Storage access (only when `-storage-issuer` is set) |
 | `POST` | `/v0/token/integration` | Exchange client integration API key for JWT token |
 | `GET` | `/.well-known/jwks.json` | Serve JSON Web Key Set for token verification |
+| `GET` | `/.well-known/openid-configuration` | Serve the OpenID Connect discovery document for storage tokens, so relying parties can find the JWKS (only when `-storage-issuer` is set) |
 | `GET` | `/health` | Health check endpoint |
 
 ## Development

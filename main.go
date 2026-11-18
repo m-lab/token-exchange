@@ -100,6 +100,10 @@ func main() {
 			),
 		)
 		mux.Handle("POST /v0/token/storage", storageInstrumented)
+		// Storage tokens are verified by third parties, which discover the
+		// signing keys through this document.
+		openIDHandler := handler.NewOpenIDConfigurationHandler(*storageIssuer, jwtSigner)
+		mux.HandleFunc("GET /.well-known/openid-configuration", openIDHandler.ServeOpenIDConfiguration)
 		slog.Info("Storage token endpoint enabled", "issuer", *storageIssuer)
 	}
 	mux.HandleFunc("GET /.well-known/jwks.json", jwksHandler.ServeJWKS)
