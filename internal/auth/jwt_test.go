@@ -360,14 +360,13 @@ func TestGetPublicJWK(t *testing.T) {
 
 func TestGenerateStorageToken(t *testing.T) {
 	keyPath := filepath.Join("testdata", "private-key.json")
-	signer, err := NewJWTSigner(keyPath)
+	const issuer = "https://auth.mlab-sandbox.measurementlab.net"
+	signer, err := NewJWTSigner(keyPath, WithStorageIssuer(issuer))
 	require.NoError(t, err)
 	require.NotNil(t, signer)
 
-	const issuer = "https://auth.mlab-sandbox.measurementlab.net"
-
 	t.Run("valid storage token generation", func(t *testing.T) {
-		tokenString, err := signer.GenerateStorageToken("test-org", 2*time.Hour, issuer, "storage")
+		tokenString, err := signer.GenerateStorageToken("test-org", 2*time.Hour, "storage")
 		require.NoError(t, err)
 		require.NotEmpty(t, tokenString)
 
@@ -393,25 +392,42 @@ func TestGenerateStorageToken(t *testing.T) {
 	})
 
 	t.Run("does not alter the shared issuer constant", func(t *testing.T) {
-		_, err := signer.GenerateStorageToken("test-org", time.Hour, issuer, "storage")
+		_, err := signer.GenerateStorageToken("test-org", time.Hour, "storage")
 		require.NoError(t, err)
 		assert.Equal(t, "token-exchange", Issuer)
+	})
+
+	t.Run("storage issuer does not leak into other tokens", func(t *testing.T) {
+		tokenString, err := signer.GenerateAutojoinToken("test-org", time.Hour, "autojoin")
+		require.NoError(t, err)
+		token, err := jwt.ParseSigned(tokenString, []jose.SignatureAlgorithm{jose.EdDSA})
+		require.NoError(t, err)
+		var claims AutojoinClaims
+		require.NoError(t, token.Claims(signer.GetPublicJWK().Key, &claims))
+		assert.Equal(t, "token-exchange", claims.Issuer)
+	})
+
+	t.Run("signer without a storage issuer refuses to mint", func(t *testing.T) {
+		plain, err := NewJWTSigner(keyPath)
+		require.NoError(t, err)
+		token, err := plain.GenerateStorageToken("test-org", time.Hour, "storage")
+		require.Error(t, err)
+		assert.Empty(t, token)
+		assert.Contains(t, err.Error(), "storage issuer is not configured")
 	})
 
 	tests := []struct {
 		name     string
 		org      string
-		issuer   string
 		audience []string
 		wantErr  string
 	}{
-		{name: "empty organization", org: "", issuer: issuer, audience: []string{"storage"}, wantErr: "organization cannot be empty"},
-		{name: "empty issuer", org: "test-org", issuer: "", audience: []string{"storage"}, wantErr: "issuer cannot be empty"},
-		{name: "empty audience", org: "test-org", issuer: issuer, wantErr: "audience cannot be empty"},
+		{name: "empty organization", org: "", audience: []string{"storage"}, wantErr: "organization cannot be empty"},
+		{name: "empty audience", org: "test-org", wantErr: "audience cannot be empty"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			token, err := signer.GenerateStorageToken(tc.org, time.Hour, tc.issuer, tc.audience...)
+			token, err := signer.GenerateStorageToken(tc.org, time.Hour, tc.audience...)
 			require.Error(t, err)
 			assert.Empty(t, token)
 			assert.Contains(t, err.Error(), tc.wantErr)

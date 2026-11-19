@@ -10,7 +10,7 @@ import (
 
 // StorageTokenGenerator defines the interface for generating storage authentication tokens.
 type StorageTokenGenerator interface {
-	GenerateStorageToken(org string, expiry time.Duration, issuer string, audience ...string) (string, error)
+	GenerateStorageToken(org string, expiry time.Duration, audience ...string) (string, error)
 }
 
 // StorageHandler handles the exchange of API keys for JWTs that Google STS
@@ -18,7 +18,6 @@ type StorageTokenGenerator interface {
 type StorageHandler struct {
 	jwtSigner StorageTokenGenerator
 	store     AutojoinKeyVerifier
-	issuer    string
 }
 
 // StorageRequest represents the request payload for a storage token exchange.
@@ -29,12 +28,11 @@ type StorageRequest = AutojoinRequest
 type StorageResponse = AutojoinResponse
 
 // NewStorageHandler creates a new [*StorageHandler] with the provided token
-// generator, key verifier and token issuer (an https:// URL).
-func NewStorageHandler(jwtSigner StorageTokenGenerator, store AutojoinKeyVerifier, issuer string) *StorageHandler {
+// generator and key verifier.
+func NewStorageHandler(jwtSigner StorageTokenGenerator, store AutojoinKeyVerifier) *StorageHandler {
 	return &StorageHandler{
 		jwtSigner: jwtSigner,
 		store:     store,
-		issuer:    issuer,
 	}
 }
 
@@ -63,7 +61,7 @@ func (h *StorageHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.jwtSigner.GenerateStorageToken(orgID, storageExpiry, h.issuer, storageAudience)
+	token, err := h.jwtSigner.GenerateStorageToken(orgID, storageExpiry, storageAudience)
 	if err != nil {
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return

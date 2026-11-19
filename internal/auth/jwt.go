@@ -20,6 +20,22 @@ const Issuer = "token-exchange"
 type JWTSigner struct {
 	signer    jose.Signer
 	publicJWK jose.JSONWebKey
+
+	// storageIssuer is the iss claim of storage tokens. Empty means the
+	// signer does not issue them.
+	storageIssuer string
+}
+
+// SignerOption configures a [JWTSigner].
+type SignerOption func(*JWTSigner)
+
+// WithStorageIssuer sets the issuer of storage tokens. Google requires it to
+// be the public https:// URL of this service, so unlike [Issuer] it differs
+// per deployment.
+func WithStorageIssuer(issuer string) SignerOption {
+	return func(s *JWTSigner) {
+		s.storageIssuer = issuer
+	}
 }
 
 // AutojoinClaims is a JWT claims set for autojoin tokens.
@@ -37,7 +53,7 @@ type ClientIntegrationClaims struct {
 }
 
 // NewJWTSigner loads a private key from a JWK file and prepares a signer.
-func NewJWTSigner(keyPath string) (*JWTSigner, error) {
+func NewJWTSigner(keyPath string, opts ...SignerOption) (*JWTSigner, error) {
 	// Read private key JWK file
 	keyBytes, err := os.ReadFile(keyPath)
 	if err != nil {
@@ -74,10 +90,14 @@ func NewJWTSigner(keyPath string) (*JWTSigner, error) {
 	// Store the public part of the key for the JWKS endpoint
 	publicJWK := privateJWK.Public()
 
-	return &JWTSigner{
+	s := &JWTSigner{
 		signer:    signer,
 		publicJWK: publicJWK,
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s, nil
 }
 
 // GenerateAutojoinToken generates a JWT token for autojoin with organization ID.
@@ -115,16 +135,16 @@ func (s *JWTSigner) GenerateAutojoinToken(org string, expiry time.Duration, audi
 
 // GenerateStorageToken generates a JWT token for Google Cloud Storage access
 // through Workload Identity Federation. Unlike [JWTSigner.GenerateAutojoinToken],
-// the issuer is caller-provided (Google requires an https:// issuer URL equal to
-// the token's iss) and the subject is set to the organization.
+// the issuer is the one set with [WithStorageIssuer] and the subject is the
+// organization.
 //
 // This method is thread safe.
-func (s *JWTSigner) GenerateStorageToken(org string, expiry time.Duration, issuer string, audience ...string) (string, error) {
+func (s *JWTSigner) GenerateStorageToken(org string, expiry time.Duration, audience ...string) (string, error) {
+	if s.storageIssuer == "" {
+		return "", errors.New("storage issuer is not configured")
+	}
 	if org == "" {
 		return "", errors.New("organization cannot be empty")
-	}
-	if issuer == "" {
-		return "", errors.New("issuer cannot be empty")
 	}
 	if len(audience) <= 0 {
 		return "", errors.New("audience cannot be empty")
@@ -136,7 +156,7 @@ func (s *JWTSigner) GenerateStorageToken(org string, expiry time.Duration, issue
 		Organization: org,
 		Claims: jwt.Claims{
 			ID:        uuid.New().String(),
-			Issuer:    issuer,
+			Issuer:    s.storageIssuer,
 			Subject:   org,
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),

@@ -52,7 +52,7 @@ func main() {
 
 	slog.Info("Starting token exchange server...")
 
-	jwtSigner := rtx.ValueOrDie(auth.NewJWTSigner(*keyPath))
+	jwtSigner := rtx.ValueOrDie(auth.NewJWTSigner(*keyPath, auth.WithStorageIssuer(*storageIssuer)))
 	slog.Info("JWT signer initialized successfully")
 
 	// Initialize Datastore client
@@ -91,7 +91,7 @@ func main() {
 	mux.Handle("POST /v0/token/autojoin", autojoinHandler)
 	mux.Handle("POST /v0/token/integration", integrationInstrumented)
 	if *storageIssuer != "" {
-		storageExchange := handler.NewStorageHandler(jwtSigner, autojoinManager, *storageIssuer)
+		storageExchange := handler.NewStorageHandler(jwtSigner, autojoinManager)
 		storageInstrumented := promhttp.InstrumentHandlerDuration(
 			metrics.StorageRequestDuration,
 			promhttp.InstrumentHandlerCounter(

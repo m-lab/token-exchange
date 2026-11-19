@@ -19,14 +19,13 @@ type mockStorageTokenGenerator struct {
 
 	org      string
 	expiry   time.Duration
-	issuer   string
 	audience []string
 }
 
 var _ StorageTokenGenerator = &mockStorageTokenGenerator{}
 
-func (m *mockStorageTokenGenerator) GenerateStorageToken(org string, expiry time.Duration, issuer string, audience ...string) (string, error) {
-	m.org, m.expiry, m.issuer, m.audience = org, expiry, issuer, audience
+func (m *mockStorageTokenGenerator) GenerateStorageToken(org string, expiry time.Duration, audience ...string) (string, error) {
+	m.org, m.expiry, m.audience = org, expiry, audience
 	if m.shouldFail {
 		return "", fmt.Errorf("generation failed")
 	}
@@ -34,8 +33,6 @@ func (m *mockStorageTokenGenerator) GenerateStorageToken(org string, expiry time
 }
 
 func TestStorageHandler(t *testing.T) {
-	const issuer = "https://auth.mlab-sandbox.measurementlab.net"
-
 	tests := []struct {
 		name          string
 		method        string
@@ -93,7 +90,7 @@ func TestStorageHandler(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mockJWT := &mockStorageTokenGenerator{shouldFail: tc.tokenGenFails}
-			h := NewStorageHandler(mockJWT, &mockAutojoinKeyVerifier{}, issuer)
+			h := NewStorageHandler(mockJWT, &mockAutojoinKeyVerifier{})
 
 			var body bytes.Buffer
 			if str, ok := tc.body.(string); ok {
@@ -120,9 +117,8 @@ func TestStorageHandler(t *testing.T) {
 			assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 
 			// The token must be minted for the validated org, with the
-			// injected issuer, the storage audience and a 2 hour lifetime.
+			// storage audience and a 2 hour lifetime.
 			assert.Equal(t, "test-org", mockJWT.org)
-			assert.Equal(t, issuer, mockJWT.issuer)
 			assert.Equal(t, []string{"storage"}, mockJWT.audience)
 			assert.Equal(t, 2*time.Hour, mockJWT.expiry)
 		})
