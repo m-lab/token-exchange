@@ -35,14 +35,6 @@ func TestOpenIDConfigurationHandler(t *testing.T) {
 			wantJWKSURI: "https://auth.example.net/.well-known/jwks.json",
 		},
 		{
-			name:        "issuer with trailing slash is reported unchanged",
-			issuer:      "https://auth.example.net/",
-			method:      http.MethodGet,
-			wantStatus:  http.StatusOK,
-			wantIssuer:  "https://auth.example.net/",
-			wantJWKSURI: "https://auth.example.net/.well-known/jwks.json",
-		},
-		{
 			name:       "method not allowed",
 			issuer:     "https://auth.example.net",
 			method:     http.MethodPost,

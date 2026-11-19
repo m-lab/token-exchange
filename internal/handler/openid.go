@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strings"
 )
 
 // openIDConfiguration is the subset of the OpenID Connect discovery document
@@ -29,9 +28,9 @@ type OpenIDConfigurationHandler struct {
 	jwtSigner PublicKeyProvider
 }
 
-// NewOpenIDConfigurationHandler creates a handler for the given issuer. The
-// issuer must be the public https URL of this service and must equal the iss
-// claim of the tokens it describes.
+// NewOpenIDConfigurationHandler creates a handler for the given issuer, which
+// must be the storage issuer already validated by auth.NewJWTSigner: relying
+// parties require it to equal the iss claim of the tokens it describes.
 func NewOpenIDConfigurationHandler(issuer string, jwtSigner PublicKeyProvider) *OpenIDConfigurationHandler {
 	return &OpenIDConfigurationHandler{
 		issuer:    issuer,
@@ -47,10 +46,8 @@ func (h *OpenIDConfigurationHandler) ServeOpenIDConfiguration(w http.ResponseWri
 	}
 
 	config := openIDConfiguration{
-		// The issuer is reported exactly as configured, because relying
-		// parties compare it byte for byte with the iss claim.
 		Issuer:                           h.issuer,
-		JWKSURI:                          strings.TrimSuffix(h.issuer, "/") + "/.well-known/jwks.json",
+		JWKSURI:                          h.issuer + "/.well-known/jwks.json",
 		ResponseTypesSupported:           []string{"id_token"},
 		SubjectTypesSupported:            []string{"public"},
 		IDTokenSigningAlgValuesSupported: []string{h.jwtSigner.GetPublicJWK().Algorithm},

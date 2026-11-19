@@ -395,12 +395,6 @@ func TestGenerateStorageToken(t *testing.T) {
 		assert.Equal(t, issuedAt.Unix(), claims.NotBefore.Time().Unix())
 	})
 
-	t.Run("does not alter the shared issuer constant", func(t *testing.T) {
-		_, err := signer.GenerateStorageToken("test-org", time.Hour, "storage")
-		require.NoError(t, err)
-		assert.Equal(t, "token-exchange", Issuer)
-	})
-
 	t.Run("storage issuer does not leak into other tokens", func(t *testing.T) {
 		tokenString, err := signer.GenerateAutojoinToken("test-org", time.Hour, "autojoin")
 		require.NoError(t, err)
@@ -409,13 +403,6 @@ func TestGenerateStorageToken(t *testing.T) {
 		var claims AutojoinClaims
 		require.NoError(t, token.Claims(signer.GetPublicJWK().Key, &claims))
 		assert.Equal(t, "token-exchange", claims.Issuer)
-	})
-
-	t.Run("a signer requires a storage issuer", func(t *testing.T) {
-		plain, err := NewJWTSigner(keyPath, "")
-		require.Error(t, err)
-		assert.Nil(t, plain)
-		assert.Contains(t, err.Error(), "storage issuer cannot be empty")
 	})
 
 	tests := []struct {
@@ -433,6 +420,49 @@ func TestGenerateStorageToken(t *testing.T) {
 			require.Error(t, err)
 			assert.Empty(t, token)
 			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestNewJWTSigner_StorageIssuer(t *testing.T) {
+	keyPath := filepath.Join("testdata", "private-key.json")
+
+	valid := []string{
+		"https://auth.example.net",
+		"https://auth.example.net:8443",
+		"https://example.net/auth",
+	}
+	for _, issuer := range valid {
+		t.Run("valid "+issuer, func(t *testing.T) {
+			signer, err := NewJWTSigner(keyPath, issuer)
+			require.NoError(t, err)
+			require.NotNil(t, signer)
+		})
+	}
+
+	invalid := []struct {
+		name   string
+		issuer string
+	}{
+		{name: "empty", issuer: ""},
+		{name: "not https", issuer: "http://auth.example.net"},
+		{name: "no scheme", issuer: "auth.example.net"},
+		{name: "scheme only", issuer: "https://"},
+		{name: "trailing slash", issuer: "https://auth.example.net/"},
+		{name: "trailing slash after path", issuer: "https://example.net/auth/"},
+		{name: "query", issuer: "https://auth.example.net?x=1"},
+		{name: "fragment", issuer: "https://auth.example.net#x"},
+		{name: "user info", issuer: "https://user@auth.example.net"},
+		{name: "leading space", issuer: " https://auth.example.net"},
+		{name: "trailing space", issuer: "https://auth.example.net "},
+		{name: "not a URL", issuer: "token-exchange"},
+	}
+	for _, tc := range invalid {
+		t.Run("invalid "+tc.name, func(t *testing.T) {
+			signer, err := NewJWTSigner(keyPath, tc.issuer)
+			require.Error(t, err)
+			assert.Nil(t, signer)
+			assert.Contains(t, err.Error(), "storage issuer")
 		})
 	}
 }

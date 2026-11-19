@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
@@ -41,11 +43,36 @@ type ClientIntegrationClaims struct {
 	Tier          int    `json:"tier"`
 }
 
+// validateStorageIssuer returns an error unless issuer is a URL that Google
+// accepts as the issuer of a workload identity provider and that this service
+// can append /.well-known paths to. A mistake here would otherwise show up only
+// as rejected token exchanges on the Google side.
+func validateStorageIssuer(issuer string) error {
+	u, err := url.Parse(issuer)
+	if err != nil {
+		return fmt.Errorf("invalid storage issuer %q: %w", issuer, err)
+	}
+	switch {
+	case u.Scheme != "https":
+		return fmt.Errorf("invalid storage issuer %q: must be an https:// URL", issuer)
+	case u.Host == "":
+		return fmt.Errorf("invalid storage issuer %q: missing host", issuer)
+	case u.User != nil:
+		return fmt.Errorf("invalid storage issuer %q: must not contain user info", issuer)
+	case u.RawQuery != "" || u.Fragment != "":
+		return fmt.Errorf("invalid storage issuer %q: must not contain a query or fragment", issuer)
+	case strings.HasSuffix(issuer, "/"):
+		return fmt.Errorf("invalid storage issuer %q: must not end with a slash", issuer)
+	}
+	return nil
+}
+
 // NewJWTSigner loads a private key from a JWK file and prepares a signer.
-// The storageIssuer is the issuer of storage tokens.
+// The storageIssuer is the issuer of storage tokens and must be a valid
+// https:// URL without a trailing slash.
 func NewJWTSigner(keyPath, storageIssuer string) (*JWTSigner, error) {
-	if storageIssuer == "" {
-		return nil, errors.New("storage issuer cannot be empty")
+	if err := validateStorageIssuer(storageIssuer); err != nil {
+		return nil, err
 	}
 
 	// Read private key JWK file

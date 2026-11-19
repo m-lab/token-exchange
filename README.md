@@ -57,7 +57,7 @@ Configuration is via command-line flags. All flags can also be set via environme
 | `-platform-ns` | `platform-credentials` | Datastore namespace for autojoin credentials |
 | `-client-integration-ns` | `client-integration` | Datastore namespace for client integration credentials |
 | `-project-id` | `mlab-sandbox` | Google Cloud project ID |
-| `-storage-issuer` | (required) | Issuer URL of storage tokens: the public `https://` URL of this service, e.g. `https://auth.mlab-sandbox.measurementlab.net`. Must equal the issuer configured in the workload identity pool provider |
+| `-storage-issuer` | (required) | Issuer URL of storage tokens: the public `https://` URL of this service with no trailing slash, e.g. `https://auth.mlab-sandbox.measurementlab.net`. The service refuses to start if it is not a valid URL. Must equal the issuer configured in the workload identity pool provider |
 
 ## CLI Tools
 
