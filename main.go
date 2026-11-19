@@ -39,7 +39,9 @@ var (
 		"Datastore namespace for platform credentials (used for autojoin)")
 	clientIntegrationNamespace = flag.String("client-integration-ns", clientIntegrationNS,
 		"Datastore namespace for client-integration credentials")
-	projectID = flag.String("project-id", defaultProjectID, "Google Cloud project ID")
+	projectID     = flag.String("project-id", defaultProjectID, "Google Cloud project ID")
+	storageIssuer = flag.String("storage-issuer", "",
+		"Required. Issuer URL of storage tokens: the public https:// URL of this service")
 )
 
 func main() {
@@ -50,7 +52,7 @@ func main() {
 
 	slog.Info("Starting token exchange server...")
 
-	jwtSigner := rtx.ValueOrDie(auth.NewJWTSigner(*keyPath))
+	jwtSigner := rtx.ValueOrDie(auth.NewJWTSigner(*keyPath, *storageIssuer))
 	slog.Info("JWT signer initialized successfully")
 
 	// Initialize Datastore client
@@ -88,6 +90,19 @@ func main() {
 
 	mux.Handle("POST /v0/token/autojoin", autojoinHandler)
 	mux.Handle("POST /v0/token/integration", integrationInstrumented)
+	storageExchange := handler.NewStorageHandler(jwtSigner, autojoinManager)
+	storageInstrumented := promhttp.InstrumentHandlerDuration(
+		metrics.StorageRequestDuration,
+		promhttp.InstrumentHandlerCounter(
+			metrics.StorageRequestsTotal,
+			http.HandlerFunc(storageExchange.Exchange),
+		),
+	)
+	mux.Handle("POST /v0/token/storage", storageInstrumented)
+	// Storage tokens are verified by third parties, which discover the
+	// signing keys through this document.
+	openIDHandler := handler.NewOpenIDConfigurationHandler(*storageIssuer, jwtSigner)
+	mux.HandleFunc("GET /.well-known/openid-configuration", openIDHandler.ServeOpenIDConfiguration)
 	mux.HandleFunc("GET /.well-known/jwks.json", jwksHandler.ServeJWKS)
 
 	// Health check endpoint

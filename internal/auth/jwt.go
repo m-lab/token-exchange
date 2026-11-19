@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
@@ -20,6 +22,11 @@ const Issuer = "token-exchange"
 type JWTSigner struct {
 	signer    jose.Signer
 	publicJWK jose.JSONWebKey
+
+	// storageIssuer is the iss claim of storage tokens. Google requires it
+	// to be the public https:// URL of this service, so unlike [Issuer] it
+	// differs per deployment.
+	storageIssuer string
 }
 
 // AutojoinClaims is a JWT claims set for autojoin tokens.
@@ -36,8 +43,38 @@ type ClientIntegrationClaims struct {
 	Tier          int    `json:"tier"`
 }
 
+// validateStorageIssuer returns an error unless issuer is a URL that Google
+// accepts as the issuer of a workload identity provider and that this service
+// can append /.well-known paths to. A mistake here would otherwise show up only
+// as rejected token exchanges on the Google side.
+func validateStorageIssuer(issuer string) error {
+	u, err := url.Parse(issuer)
+	if err != nil {
+		return fmt.Errorf("invalid storage issuer %q: %w", issuer, err)
+	}
+	switch {
+	case u.Scheme != "https":
+		return fmt.Errorf("invalid storage issuer %q: must be an https:// URL", issuer)
+	case u.Host == "":
+		return fmt.Errorf("invalid storage issuer %q: missing host", issuer)
+	case u.User != nil:
+		return fmt.Errorf("invalid storage issuer %q: must not contain user info", issuer)
+	case u.RawQuery != "" || u.Fragment != "":
+		return fmt.Errorf("invalid storage issuer %q: must not contain a query or fragment", issuer)
+	case strings.HasSuffix(issuer, "/"):
+		return fmt.Errorf("invalid storage issuer %q: must not end with a slash", issuer)
+	}
+	return nil
+}
+
 // NewJWTSigner loads a private key from a JWK file and prepares a signer.
-func NewJWTSigner(keyPath string) (*JWTSigner, error) {
+// The storageIssuer is the issuer of storage tokens and must be a valid
+// https:// URL without a trailing slash.
+func NewJWTSigner(keyPath, storageIssuer string) (*JWTSigner, error) {
+	if err := validateStorageIssuer(storageIssuer); err != nil {
+		return nil, err
+	}
+
 	// Read private key JWK file
 	keyBytes, err := os.ReadFile(keyPath)
 	if err != nil {
@@ -75,8 +112,9 @@ func NewJWTSigner(keyPath string) (*JWTSigner, error) {
 	publicJWK := privateJWK.Public()
 
 	return &JWTSigner{
-		signer:    signer,
-		publicJWK: publicJWK,
+		signer:        signer,
+		publicJWK:     publicJWK,
+		storageIssuer: storageIssuer,
 	}, nil
 }
 
@@ -98,6 +136,43 @@ func (s *JWTSigner) GenerateAutojoinToken(org string, expiry time.Duration, audi
 		Claims: jwt.Claims{
 			ID:        uuid.New().String(),
 			Issuer:    Issuer,
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			Expiry:    jwt.NewNumericDate(now.Add(expiry)),
+			Audience:  audience,
+		},
+	}
+
+	signedToken, err := jwt.Signed(s.signer).Claims(claims).Serialize()
+	if err != nil {
+		return "", fmt.Errorf("failed to sign claims: %w", err)
+	}
+
+	return signedToken, nil
+}
+
+// GenerateStorageToken generates a JWT token for Google Cloud Storage access
+// through Workload Identity Federation. Unlike [JWTSigner.GenerateAutojoinToken],
+// the issuer is the storage issuer given to [NewJWTSigner] and the subject is
+// the organization.
+//
+// This method is thread safe.
+func (s *JWTSigner) GenerateStorageToken(org string, expiry time.Duration, audience ...string) (string, error) {
+	if org == "" {
+		return "", errors.New("organization cannot be empty")
+	}
+	if len(audience) <= 0 {
+		return "", errors.New("audience cannot be empty")
+	}
+
+	now := time.Now()
+
+	claims := AutojoinClaims{
+		Organization: org,
+		Claims: jwt.Claims{
+			ID:        uuid.New().String(),
+			Issuer:    s.storageIssuer,
+			Subject:   org,
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			Expiry:    jwt.NewNumericDate(now.Add(expiry)),
