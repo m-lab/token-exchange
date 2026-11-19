@@ -29,8 +29,7 @@ type OpenIDConfigurationHandler struct {
 }
 
 // NewOpenIDConfigurationHandler creates a handler for the given issuer, which
-// must be the storage issuer already validated by auth.NewJWTSigner: relying
-// parties require it to equal the iss claim of the tokens it describes.
+// must be the same https:// URL that storage tokens carry in their iss claim.
 func NewOpenIDConfigurationHandler(issuer string, jwtSigner PublicKeyProvider) *OpenIDConfigurationHandler {
 	return &OpenIDConfigurationHandler{
 		issuer:    issuer,
