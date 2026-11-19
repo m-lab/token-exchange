@@ -41,7 +41,7 @@ var (
 		"Datastore namespace for client-integration credentials")
 	projectID     = flag.String("project-id", defaultProjectID, "Google Cloud project ID")
 	storageIssuer = flag.String("storage-issuer", "",
-		"Issuer URL for storage tokens (https://...); if empty, POST /v0/token/storage is not registered")
+		"Required. Issuer URL of storage tokens: the public https:// URL of this service")
 )
 
 func main() {
@@ -52,7 +52,7 @@ func main() {
 
 	slog.Info("Starting token exchange server...")
 
-	jwtSigner := rtx.ValueOrDie(auth.NewJWTSigner(*keyPath, auth.WithStorageIssuer(*storageIssuer)))
+	jwtSigner := rtx.ValueOrDie(auth.NewJWTSigner(*keyPath, *storageIssuer))
 	slog.Info("JWT signer initialized successfully")
 
 	// Initialize Datastore client
@@ -90,22 +90,19 @@ func main() {
 
 	mux.Handle("POST /v0/token/autojoin", autojoinHandler)
 	mux.Handle("POST /v0/token/integration", integrationInstrumented)
-	if *storageIssuer != "" {
-		storageExchange := handler.NewStorageHandler(jwtSigner, autojoinManager)
-		storageInstrumented := promhttp.InstrumentHandlerDuration(
-			metrics.StorageRequestDuration,
-			promhttp.InstrumentHandlerCounter(
-				metrics.StorageRequestsTotal,
-				http.HandlerFunc(storageExchange.Exchange),
-			),
-		)
-		mux.Handle("POST /v0/token/storage", storageInstrumented)
-		// Storage tokens are verified by third parties, which discover the
-		// signing keys through this document.
-		openIDHandler := handler.NewOpenIDConfigurationHandler(*storageIssuer, jwtSigner)
-		mux.HandleFunc("GET /.well-known/openid-configuration", openIDHandler.ServeOpenIDConfiguration)
-		slog.Info("Storage token endpoint enabled", "issuer", *storageIssuer)
-	}
+	storageExchange := handler.NewStorageHandler(jwtSigner, autojoinManager)
+	storageInstrumented := promhttp.InstrumentHandlerDuration(
+		metrics.StorageRequestDuration,
+		promhttp.InstrumentHandlerCounter(
+			metrics.StorageRequestsTotal,
+			http.HandlerFunc(storageExchange.Exchange),
+		),
+	)
+	mux.Handle("POST /v0/token/storage", storageInstrumented)
+	// Storage tokens are verified by third parties, which discover the
+	// signing keys through this document.
+	openIDHandler := handler.NewOpenIDConfigurationHandler(*storageIssuer, jwtSigner)
+	mux.HandleFunc("GET /.well-known/openid-configuration", openIDHandler.ServeOpenIDConfiguration)
 	mux.HandleFunc("GET /.well-known/jwks.json", jwksHandler.ServeJWKS)
 
 	// Health check endpoint

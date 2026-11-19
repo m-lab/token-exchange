@@ -12,6 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testStorageIssuer is the storage token issuer used by tests that do not
+// care about its value.
+const testStorageIssuer = "https://auth.example.net"
+
 func TestNewJWTSigner(t *testing.T) {
 	// Use testdata directory for test files
 	testdataDir := "testdata"
@@ -19,7 +23,7 @@ func TestNewJWTSigner(t *testing.T) {
 	// Test cases for file-based tests
 	t.Run("valid testdata key", func(t *testing.T) {
 		keyPath := filepath.Join(testdataDir, "private-key.json")
-		signer, err := NewJWTSigner(keyPath)
+		signer, err := NewJWTSigner(keyPath, testStorageIssuer)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, signer)
@@ -98,7 +102,7 @@ func TestNewJWTSigner(t *testing.T) {
 			require.NoError(t, err)
 
 			// Test NewJWTSigner
-			signer, err := NewJWTSigner(keyPath)
+			signer, err := NewJWTSigner(keyPath, testStorageIssuer)
 
 			if tc.expectError {
 				assert.Error(t, err)
@@ -118,7 +122,7 @@ func TestNewJWTSigner(t *testing.T) {
 
 	// Test non-existent file
 	t.Run("non-existent file", func(t *testing.T) {
-		signer, err := NewJWTSigner("/non/existent/path")
+		signer, err := NewJWTSigner("/non/existent/path", testStorageIssuer)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to read private key file")
 		assert.Nil(t, signer)
@@ -130,7 +134,7 @@ func TestGenerateAutojoinToken(t *testing.T) {
 	keyPath := filepath.Join("testdata", "private-key.json")
 
 	// Initialize a JWTSigner
-	signer, err := NewJWTSigner(keyPath)
+	signer, err := NewJWTSigner(keyPath, testStorageIssuer)
 	require.NoError(t, err)
 	require.NotNil(t, signer)
 
@@ -218,7 +222,7 @@ func TestGenerateClientIntegrationToken(t *testing.T) {
 	keyPath := filepath.Join("testdata", "private-key.json")
 
 	// Initialize a JWTSigner
-	signer, err := NewJWTSigner(keyPath)
+	signer, err := NewJWTSigner(keyPath, testStorageIssuer)
 	require.NoError(t, err)
 	require.NotNil(t, signer)
 
@@ -337,7 +341,7 @@ func TestGetPublicJWK(t *testing.T) {
 	keyPath := filepath.Join("testdata", "private-key.json")
 
 	// Initialize a JWTSigner
-	signer, err := NewJWTSigner(keyPath)
+	signer, err := NewJWTSigner(keyPath, testStorageIssuer)
 	require.NoError(t, err)
 	require.NotNil(t, signer)
 
@@ -361,7 +365,7 @@ func TestGetPublicJWK(t *testing.T) {
 func TestGenerateStorageToken(t *testing.T) {
 	keyPath := filepath.Join("testdata", "private-key.json")
 	const issuer = "https://auth.mlab-sandbox.measurementlab.net"
-	signer, err := NewJWTSigner(keyPath, WithStorageIssuer(issuer))
+	signer, err := NewJWTSigner(keyPath, issuer)
 	require.NoError(t, err)
 	require.NotNil(t, signer)
 
@@ -407,13 +411,11 @@ func TestGenerateStorageToken(t *testing.T) {
 		assert.Equal(t, "token-exchange", claims.Issuer)
 	})
 
-	t.Run("signer without a storage issuer refuses to mint", func(t *testing.T) {
-		plain, err := NewJWTSigner(keyPath)
-		require.NoError(t, err)
-		token, err := plain.GenerateStorageToken("test-org", time.Hour, "storage")
+	t.Run("a signer requires a storage issuer", func(t *testing.T) {
+		plain, err := NewJWTSigner(keyPath, "")
 		require.Error(t, err)
-		assert.Empty(t, token)
-		assert.Contains(t, err.Error(), "storage issuer is not configured")
+		assert.Nil(t, plain)
+		assert.Contains(t, err.Error(), "storage issuer cannot be empty")
 	})
 
 	tests := []struct {

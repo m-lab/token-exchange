@@ -12,10 +12,10 @@ A Cloud Run service that exchanges API keys for signed JWTs for M-Lab services.
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/v0/token/autojoin` | Exchange autojoin API key for JWT token |
-| `POST` | `/v0/token/storage` | Exchange autojoin API key for a JWT to be exchanged by Google STS for Cloud Storage access (only when `-storage-issuer` is set) |
+| `POST` | `/v0/token/storage` | Exchange autojoin API key for a JWT to be exchanged by Google STS for Cloud Storage access |
 | `POST` | `/v0/token/integration` | Exchange client integration API key for JWT token |
 | `GET` | `/.well-known/jwks.json` | Serve JSON Web Key Set for token verification |
-| `GET` | `/.well-known/openid-configuration` | Serve the OpenID Connect discovery document for storage tokens, so relying parties can find the JWKS (only when `-storage-issuer` is set) |
+| `GET` | `/.well-known/openid-configuration` | Serve the OpenID Connect discovery document for storage tokens, so relying parties can find the JWKS |
 | `GET` | `/health` | Health check endpoint |
 
 ## Development
@@ -57,7 +57,7 @@ Configuration is via command-line flags. All flags can also be set via environme
 | `-platform-ns` | `platform-credentials` | Datastore namespace for autojoin credentials |
 | `-client-integration-ns` | `client-integration` | Datastore namespace for client integration credentials |
 | `-project-id` | `mlab-sandbox` | Google Cloud project ID |
-| `-storage-issuer` | (empty) | Issuer URL for storage tokens, e.g. `https://auth.mlab-sandbox.measurementlab.net`; must equal the issuer configured in the workload identity pool provider; if empty, `POST /v0/token/storage` is not registered |
+| `-storage-issuer` | (required) | Issuer URL of storage tokens: the public `https://` URL of this service, e.g. `https://auth.mlab-sandbox.measurementlab.net`. Must equal the issuer configured in the workload identity pool provider |
 
 ## CLI Tools
 

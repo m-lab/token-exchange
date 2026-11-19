@@ -21,21 +21,10 @@ type JWTSigner struct {
 	signer    jose.Signer
 	publicJWK jose.JSONWebKey
 
-	// storageIssuer is the iss claim of storage tokens. Empty means the
-	// signer does not issue them.
+	// storageIssuer is the iss claim of storage tokens. Google requires it
+	// to be the public https:// URL of this service, so unlike [Issuer] it
+	// differs per deployment.
 	storageIssuer string
-}
-
-// SignerOption configures a [JWTSigner].
-type SignerOption func(*JWTSigner)
-
-// WithStorageIssuer sets the issuer of storage tokens. Google requires it to
-// be the public https:// URL of this service, so unlike [Issuer] it differs
-// per deployment.
-func WithStorageIssuer(issuer string) SignerOption {
-	return func(s *JWTSigner) {
-		s.storageIssuer = issuer
-	}
 }
 
 // AutojoinClaims is a JWT claims set for autojoin tokens.
@@ -53,7 +42,12 @@ type ClientIntegrationClaims struct {
 }
 
 // NewJWTSigner loads a private key from a JWK file and prepares a signer.
-func NewJWTSigner(keyPath string, opts ...SignerOption) (*JWTSigner, error) {
+// The storageIssuer is the issuer of storage tokens.
+func NewJWTSigner(keyPath, storageIssuer string) (*JWTSigner, error) {
+	if storageIssuer == "" {
+		return nil, errors.New("storage issuer cannot be empty")
+	}
+
 	// Read private key JWK file
 	keyBytes, err := os.ReadFile(keyPath)
 	if err != nil {
@@ -90,14 +84,11 @@ func NewJWTSigner(keyPath string, opts ...SignerOption) (*JWTSigner, error) {
 	// Store the public part of the key for the JWKS endpoint
 	publicJWK := privateJWK.Public()
 
-	s := &JWTSigner{
-		signer:    signer,
-		publicJWK: publicJWK,
-	}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s, nil
+	return &JWTSigner{
+		signer:        signer,
+		publicJWK:     publicJWK,
+		storageIssuer: storageIssuer,
+	}, nil
 }
 
 // GenerateAutojoinToken generates a JWT token for autojoin with organization ID.
@@ -135,14 +126,11 @@ func (s *JWTSigner) GenerateAutojoinToken(org string, expiry time.Duration, audi
 
 // GenerateStorageToken generates a JWT token for Google Cloud Storage access
 // through Workload Identity Federation. Unlike [JWTSigner.GenerateAutojoinToken],
-// the issuer is the one set with [WithStorageIssuer] and the subject is the
-// organization.
+// the issuer is the storage issuer given to [NewJWTSigner] and the subject is
+// the organization.
 //
 // This method is thread safe.
 func (s *JWTSigner) GenerateStorageToken(org string, expiry time.Duration, audience ...string) (string, error) {
-	if s.storageIssuer == "" {
-		return "", errors.New("storage issuer is not configured")
-	}
 	if org == "" {
 		return "", errors.New("organization cannot be empty")
 	}
