@@ -47,4 +47,25 @@ var (
 		},
 		[]string{"code", "method"},
 	)
+
+	// StorageRequestsTotal counts incoming storage token requests.
+	// Used with promhttp.InstrumentHandlerCounter.
+	StorageRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "tokenexchange_storage_requests_total",
+			Help: "Total number of storage token requests.",
+		},
+		[]string{"code", "method"},
+	)
+
+	// StorageRequestDuration measures storage token request latency.
+	// Used with promhttp.InstrumentHandlerDuration.
+	StorageRequestDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "tokenexchange_storage_request_duration_seconds",
+			Help:    "Duration of storage token requests.",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"code", "method"},
+	)
 )

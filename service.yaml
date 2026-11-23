@@ -18,6 +18,8 @@ spec:
               value: "MLAB_PROJECT_PLACEHOLDER"
             - name: PLATFORM_NS
               value: "PLATFORM_NS_PLACEHOLDER"
+            - name: STORAGE_ISSUER
+              value: "https://auth.MLAB_PROJECT_PLACEHOLDER.measurementlab.net"
           volumeMounts:
             - name: jwk-secret
               mountPath: /secrets

@@ -12,6 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testStorageIssuer is the storage token issuer used by tests that do not
+// care about its value.
+const testStorageIssuer = "https://auth.example.net"
+
 func TestNewJWTSigner(t *testing.T) {
 	// Use testdata directory for test files
 	testdataDir := "testdata"
@@ -19,7 +23,7 @@ func TestNewJWTSigner(t *testing.T) {
 	// Test cases for file-based tests
 	t.Run("valid testdata key", func(t *testing.T) {
 		keyPath := filepath.Join(testdataDir, "private-key.json")
-		signer, err := NewJWTSigner(keyPath)
+		signer, err := NewJWTSigner(keyPath, testStorageIssuer)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, signer)
@@ -98,7 +102,7 @@ func TestNewJWTSigner(t *testing.T) {
 			require.NoError(t, err)
 
 			// Test NewJWTSigner
-			signer, err := NewJWTSigner(keyPath)
+			signer, err := NewJWTSigner(keyPath, testStorageIssuer)
 
 			if tc.expectError {
 				assert.Error(t, err)
@@ -118,7 +122,7 @@ func TestNewJWTSigner(t *testing.T) {
 
 	// Test non-existent file
 	t.Run("non-existent file", func(t *testing.T) {
-		signer, err := NewJWTSigner("/non/existent/path")
+		signer, err := NewJWTSigner("/non/existent/path", testStorageIssuer)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to read private key file")
 		assert.Nil(t, signer)
@@ -130,7 +134,7 @@ func TestGenerateAutojoinToken(t *testing.T) {
 	keyPath := filepath.Join("testdata", "private-key.json")
 
 	// Initialize a JWTSigner
-	signer, err := NewJWTSigner(keyPath)
+	signer, err := NewJWTSigner(keyPath, testStorageIssuer)
 	require.NoError(t, err)
 	require.NotNil(t, signer)
 
@@ -218,7 +222,7 @@ func TestGenerateClientIntegrationToken(t *testing.T) {
 	keyPath := filepath.Join("testdata", "private-key.json")
 
 	// Initialize a JWTSigner
-	signer, err := NewJWTSigner(keyPath)
+	signer, err := NewJWTSigner(keyPath, testStorageIssuer)
 	require.NoError(t, err)
 	require.NotNil(t, signer)
 
@@ -337,7 +341,7 @@ func TestGetPublicJWK(t *testing.T) {
 	keyPath := filepath.Join("testdata", "private-key.json")
 
 	// Initialize a JWTSigner
-	signer, err := NewJWTSigner(keyPath)
+	signer, err := NewJWTSigner(keyPath, testStorageIssuer)
 	require.NoError(t, err)
 	require.NotNil(t, signer)
 
@@ -356,4 +360,109 @@ func TestGetPublicJWK(t *testing.T) {
 	jsonData, err := publicJWK.MarshalJSON()
 	require.NoError(t, err)
 	assert.NotContains(t, string(jsonData), "TI-z7vTzg24lVrLgwejEA0NrY184tP4SDq_Z9mToV5w")
+}
+
+func TestGenerateStorageToken(t *testing.T) {
+	keyPath := filepath.Join("testdata", "private-key.json")
+	const issuer = "https://auth.mlab-sandbox.measurementlab.net"
+	signer, err := NewJWTSigner(keyPath, issuer)
+	require.NoError(t, err)
+	require.NotNil(t, signer)
+
+	t.Run("valid storage token generation", func(t *testing.T) {
+		tokenString, err := signer.GenerateStorageToken("test-org", 2*time.Hour, "storage")
+		require.NoError(t, err)
+		require.NotEmpty(t, tokenString)
+
+		token, err := jwt.ParseSigned(tokenString, []jose.SignatureAlgorithm{jose.EdDSA})
+		require.NoError(t, err)
+
+		var claims AutojoinClaims
+		require.NoError(t, token.Claims(signer.GetPublicJWK().Key, &claims))
+
+		assert.Equal(t, issuer, claims.Issuer)
+		assert.Equal(t, "test-org", claims.Subject)
+		assert.Equal(t, "test-org", claims.Organization)
+		assert.Equal(t, jwt.Audience{"storage"}, claims.Audience)
+		assert.NotEmpty(t, claims.ID)
+
+		require.NotNil(t, claims.IssuedAt)
+		require.NotNil(t, claims.Expiry)
+		require.NotNil(t, claims.NotBefore)
+		issuedAt := claims.IssuedAt.Time()
+		assert.WithinDuration(t, time.Now(), issuedAt, 5*time.Second)
+		assert.Equal(t, issuedAt.Add(2*time.Hour).Unix(), claims.Expiry.Time().Unix())
+		assert.Equal(t, issuedAt.Unix(), claims.NotBefore.Time().Unix())
+	})
+
+	t.Run("storage issuer does not leak into other tokens", func(t *testing.T) {
+		tokenString, err := signer.GenerateAutojoinToken("test-org", time.Hour, "autojoin")
+		require.NoError(t, err)
+		token, err := jwt.ParseSigned(tokenString, []jose.SignatureAlgorithm{jose.EdDSA})
+		require.NoError(t, err)
+		var claims AutojoinClaims
+		require.NoError(t, token.Claims(signer.GetPublicJWK().Key, &claims))
+		assert.Equal(t, "token-exchange", claims.Issuer)
+	})
+
+	tests := []struct {
+		name     string
+		org      string
+		audience []string
+		wantErr  string
+	}{
+		{name: "empty organization", org: "", audience: []string{"storage"}, wantErr: "organization cannot be empty"},
+		{name: "empty audience", org: "test-org", wantErr: "audience cannot be empty"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			token, err := signer.GenerateStorageToken(tc.org, time.Hour, tc.audience...)
+			require.Error(t, err)
+			assert.Empty(t, token)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestNewJWTSigner_StorageIssuer(t *testing.T) {
+	keyPath := filepath.Join("testdata", "private-key.json")
+
+	valid := []string{
+		"https://auth.example.net",
+		"https://auth.example.net:8443",
+		"https://example.net/auth",
+	}
+	for _, issuer := range valid {
+		t.Run("valid "+issuer, func(t *testing.T) {
+			signer, err := NewJWTSigner(keyPath, issuer)
+			require.NoError(t, err)
+			require.NotNil(t, signer)
+		})
+	}
+
+	invalid := []struct {
+		name   string
+		issuer string
+	}{
+		{name: "empty", issuer: ""},
+		{name: "not https", issuer: "http://auth.example.net"},
+		{name: "no scheme", issuer: "auth.example.net"},
+		{name: "scheme only", issuer: "https://"},
+		{name: "trailing slash", issuer: "https://auth.example.net/"},
+		{name: "trailing slash after path", issuer: "https://example.net/auth/"},
+		{name: "query", issuer: "https://auth.example.net?x=1"},
+		{name: "fragment", issuer: "https://auth.example.net#x"},
+		{name: "user info", issuer: "https://user@auth.example.net"},
+		{name: "leading space", issuer: " https://auth.example.net"},
+		{name: "trailing space", issuer: "https://auth.example.net "},
+		{name: "not a URL", issuer: "token-exchange"},
+	}
+	for _, tc := range invalid {
+		t.Run("invalid "+tc.name, func(t *testing.T) {
+			signer, err := NewJWTSigner(keyPath, tc.issuer)
+			require.Error(t, err)
+			assert.Nil(t, signer)
+			assert.Contains(t, err.Error(), "storage issuer")
+		})
+	}
 }
